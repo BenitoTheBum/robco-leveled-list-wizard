@@ -331,7 +331,7 @@ def parse_plugin(filepath: str) -> dict:
     _framework_masters = {
         "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm",
         "dlccoast.esm", "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm",
-        "munitions - an ammo expansion.esl", "tacticalreload.esm", "metroweaponframework.esl",
+        "munitions - an ammo expansion.esl", "munitions additional ammo redux.esl", "tacticalreload.esm", "metroweaponframework.esl",
     }
     low_plug = plugin_name.lower()
     is_sts_patch = any(k in low_plug for k in ("3dscopes", "sts", "see-through-scopes"))
@@ -341,7 +341,7 @@ def parse_plugin(filepath: str) -> dict:
     ]
     is_attachment_addon = bool(
         custom_masters and len(omod_recs) >= 3
-        and len(weap_families) <= 2 and not armo_list and not raw_npc
+        and len(weap_families) <= 4 and not armo_list and not raw_npc
     )
     has_records = bool(root_lvli or weap_families or armo_list or npc_list or is_attachment_addon)
 

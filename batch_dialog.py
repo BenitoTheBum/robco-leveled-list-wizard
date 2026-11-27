@@ -760,7 +760,7 @@ class BatchPreviewDialog(QDialog):
             #           26=Player Homes, 30=Quests, 34=UI, 35=Visuals, 45=Bug Fixes, 51=Framework/Modders Resources
             cats = _read_mo2_categories(mod_dir)
             _GEAR_CATS = {"5", "9", "41", "42", "49"}
-            _SKIP_CATS = {"8", "22", "24", "26", "30", "34", "35", "45", "51"}
+            _SKIP_CATS = {"8", "22", "26", "30", "34", "35", "45", "51"}
             if cats and not (cats & _GEAR_CATS) and (cats & _SKIP_CATS):
                 self._skipped_mods.append((mod_name, "(all plugins)", f"MO2/Nexus non-gear category ({','.join(sorted(cats))})"))
                 continue
@@ -814,7 +814,7 @@ class BatchPreviewDialog(QDialog):
                     continue
                 sels_check = self._get_injectable_records(parsed)
                 has_injectable_gear = bool(sels_check["WEAP"] or sels_check["ARMO"])
-                cell_limit = 25 if has_injectable_gear else 8
+                cell_limit = 60 if has_injectable_gear else 8
 
                 if parsed.get("new_wrld_count", 0) > 0:
                     self._skipped_mods.append((mod_name, fname, "New worldspace (WRLD) expansion"))
@@ -831,7 +831,7 @@ class BatchPreviewDialog(QDialog):
                     "vats", "merchant", "vendor", "gambling", "vending",
                     "follower", "companion", "worldboss", "world boss", "nac.esp",
                     "settlement", "locations plus", "warehouse", "labs", "sewer",
-                    "retexture", "munitions", "ammo expansion",
+                    "retexture", "munitions - ammo expansion", "munitions additional ammo",
                 )
                 _QUEST_DUNGEON_KWS = ("quest", "dungeon", "horror", "antagonist")
                 low_title = f"{mod_name} {fname}".lower()
