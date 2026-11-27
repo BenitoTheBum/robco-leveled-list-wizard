@@ -1037,7 +1037,7 @@ class BatchPreviewDialog(QDialog):
 
             if sug.get("obts_targets"):
                 from .robco_engine import inject_obts_templates
-                esl_path = os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esp")
+                esl_path = os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AttachmentTemplates.esp")
                 added_cnt = inject_obts_templates(
                     esl_path, parsed, sug.get("addon_path", ""),
                     sug["obts_targets"], self.organizer.resolvePath,
@@ -1050,7 +1050,7 @@ class BatchPreviewDialog(QDialog):
                     )
                     target_labels = " | ".join(self._label_map.get(t, t) for t in sug["targets"])
                     audit_rows.append([
-                        f"RobCo_AutoSubLists.esp (+{added_cnt} OBTS)", mod_name, fname,
+                        f"RobCo_AttachmentTemplates.esp (+{added_cnt} OBTS)", mod_name, fname,
                         injected_items, target_labels, 1, 0, 1,
                     ])
                 continue
