@@ -437,6 +437,14 @@ class SelectTargetsPage(QWizardPage):
             col_box.addStretch()
             self._cols_layout.addLayout(col_box)
 
+    def get_selected_targets(self) -> dict:
+        result = {"WEAP": [], "ARMO": [], "NPC_": []}
+        for fid, cb in self._checkboxes.items():
+            if cb.isChecked():
+                cat = self._cb_category.get(fid, "WEAP")
+                result[cat].append(fid)
+        return result
+
 class SelectOverhaulTargetsPage(QWizardPage):
     def __init__(self, wizard, parent=None):
         super().__init__(parent)

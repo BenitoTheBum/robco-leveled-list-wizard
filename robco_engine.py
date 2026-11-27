@@ -658,9 +658,9 @@ def _iter_subs_raw(body: bytes):
     n = len(body)
     while p + 6 <= n:
         stype = body[p:p+4]
-        ssz = struct.unpack("<H", body[p+4:p+6])
+        ssz, = struct.unpack("<H", body[p+4:p+6])
         if stype == b"XXXX" and ssz == 4 and p + 10 <= n:
-            big_sz = struct.unpack("<I", body[p+6:p+10])
+            big_sz, = struct.unpack("<I", body[p+6:p+10])
             p += 10
             if p + 6 <= n:
                 stype = body[p:p+4]
@@ -690,18 +690,18 @@ def _remap_obts_blob(obts: bytes, src_masters: List[str], dst_masters: List[str]
     buf = bytearray(obts)
     if len(buf) < 18:
         return buf
-    att_cnt = struct.unpack("<I", buf[0:4])
-    kw_cnt = buf
+    att_cnt, = struct.unpack("<I", buf[0:4])
+    kw_cnt = buf[15]
     pos = 16
     for _ in range(kw_cnt):
         if pos + 4 <= len(buf):
-            kf = struct.unpack("<I", buf[pos:pos+4])
+            kf, = struct.unpack("<I", buf[pos:pos+4])
             buf[pos:pos+4] = struct.pack("<I", _remap_fid(kf, src_masters, dst_masters))
         pos += 4
     pos += 2
     for _ in range(att_cnt):
         if pos + 7 <= len(buf):
-            ofid = struct.unpack("<I", buf[pos:pos+4])
+            ofid, = struct.unpack("<I", buf[pos:pos+4])
             buf[pos:pos+4] = struct.pack("<I", _remap_fid(ofid, src_masters, dst_masters))
         pos += 7
     return buf
@@ -714,8 +714,7 @@ def find_obts_weapon_targets(addon_parsed: dict, resolve_plugin_fn) -> List[dict
     except ImportError:
         from robco_parser import parse_plugin
 
-    omods = addon_parsed.get("omod_list", [])
-    if not omods:
+    if not addon_parsed.get("omod_list"):
         return []
     vanilla = {
         "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm",
@@ -732,7 +731,7 @@ def find_obts_weapon_targets(addon_parsed: dict, resolve_plugin_fn) -> List[dict
             for mem in fam.get("members", []):
                 if mem.get("is_unique"):
                     continue
-                if mem.get("template_count", 0) > 0:
+                if (mem.get("templates", 0) or mem.get("template_count", 0)) > 0:
                     targets.append({
                         "master_plugin": mp["plugin_name"],
                         "master_path": m_path,
@@ -766,14 +765,14 @@ def inject_obts_templates(
     with open(esl_path, "rb") as f:
         blob = bytearray(f.read())
 
-    tes4_sz = struct.unpack("<I", blob[4:8])
+    tes4_sz, = struct.unpack("<I", blob[4:8])
     tes4_body = bytes(blob[24:24 + tes4_sz])
     esl_masters: List[str] = []
     other_tes4_subs = bytearray()
     p = 0
     while p + 6 <= len(tes4_body):
         st = tes4_body[p:p+4]
-        ssz = struct.unpack("<H", tes4_body[p+4:p+6])
+        ssz, = struct.unpack("<H", tes4_body[p+4:p+6])
         ch = tes4_body[p+6:p+6+ssz]
         p += 6 + ssz
         if st == b"MAST":
@@ -815,12 +814,12 @@ def inject_obts_templates(
         with open(m_path, "rb") as mf:
             mdata = mf.read()
 
-        m_tes4 = struct.unpack("<I", mdata[4:8])
+        m_tes4, = struct.unpack("<I", mdata[4:8])
         off = 24 + m_tes4
         raw_weap_body = None
         while off + 24 <= len(mdata):
             rt = mdata[off:off+4]
-            rsz = struct.unpack("<I", mdata[off+4:off+8])
+            rsz, = struct.unpack("<I", mdata[off+4:off+8])
             if rt == b"GRUP":
                 off += 24
                 continue
@@ -844,7 +843,7 @@ def inject_obts_templates(
 
         for st, ch, is_big in _iter_subs_raw(raw_weap_body):
             if st == b"OBTE" and len(ch) == 4:
-                orig_obte = struct.unpack("<I", ch)
+                orig_obte, = struct.unpack("<I", ch)
                 obte_pos = len(rebuilt) + 6
                 rebuilt.extend(st + b"\x04\x00" + ch)
             elif st == b"OBTS":
@@ -858,14 +857,14 @@ def inject_obts_templates(
                         tmpl = bytearray(base_obts_list[v_idx % len(base_obts_list)])
                         if len(tmpl) < 18:
                             continue
-                        tmpl = 0
-                        att_cnt = struct.unpack("<I", tmpl[0:4])
-                        kw_cnt = tmpl
+                        tmpl[14] = 0
+                        att_cnt, = struct.unpack("<I", tmpl[0:4])
+                        kw_cnt = tmpl[15]
                         apos = 16 + kw_cnt * 4 + 2
                         swapped = False
                         for _ in range(att_cnt):
                             if apos + 7 <= len(tmpl):
-                                cur_fid = struct.unpack("<I", tmpl[apos:apos+4])
+                                cur_fid, = struct.unpack("<I", tmpl[apos:apos+4])
                                 cur_low = cur_fid & 0x00FFFFFF
                                 sl = m_omod_slot.get(cur_low, "")
                                 if sl and sl in slot_to_addon_omods:
@@ -911,7 +910,7 @@ def inject_obts_templates(
 
     hedr_pos = final_blob.find(b"HEDR\x0C\x00")
     if hedr_pos != -1:
-        cur_cnt = struct.unpack("<I", final_blob[hedr_pos+10:hedr_pos+14])
+        cur_cnt, = struct.unpack("<I", final_blob[hedr_pos+10:hedr_pos+14])
         final_blob[hedr_pos+10:hedr_pos+14] = struct.pack("<I", cur_cnt + len(weap_targets))
 
     with open(esl_path, "wb") as f:
