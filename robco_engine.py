@@ -745,181 +745,165 @@ def find_obts_weapon_targets(addon_parsed: dict, resolve_plugin_fn) -> List[dict
     return targets
 
 
-def inject_obts_templates(
-    esl_path: str,
-    addon_parsed: dict,
-    addon_path: str,
-    weap_targets: List[dict],
-    resolve_plugin_fn,
-) -> int:
-    """Clone base WEAP records into RobCo_AutoSubLists.esp and append OBTS variants using addon OMODs."""
-    import zlib
-    try:
-        from .robco_parser import parse_plugin
-    except ImportError:
-        from robco_parser import parse_plugin
-
-    if not weap_targets or not addon_parsed.get("omod_list"):
+def inject_obts_templates(mods_dir: str, active_plugins: list, addon_entries: list,
+                          out_mod_name: str = "RobCo Auto-Injected Patches") -> int:
+    """Write cloned WEAP records with appended OBTS attachment combinations into ESL-flagged RobCo_AttachmentTemplates.esp."""
+    if not addon_entries:
         return 0
+    esp_path = os.path.join(mods_dir, out_mod_name, "RobCo_AttachmentTemplates.esp")
+    os.makedirs(os.path.dirname(esp_path), exist_ok=True)
 
-    if not os.path.isfile(esl_path):
-        append_sublist_to_esl(esl_path, "LVLI", "RobCo_Init_Anchor")
+    plugin_paths = {}
+    for mod_folder in os.listdir(mods_dir):
+        mp = os.path.join(mods_dir, mod_folder)
+        if os.path.isdir(mp):
+            for fn in os.listdir(mp):
+                if fn.lower().endswith((".esm", ".esp", ".esl")):
+                    plugin_paths[fn.lower()] = os.path.join(mp, fn)
 
-    with open(esl_path, "rb") as f:
-        blob = bytearray(f.read())
+    def _read_masters(p_path):
+        with open(p_path, "rb") as f:
+            hdr = f.read(24)
+            if len(hdr) < 24 or hdr[0:4] != b"TES4":
+                return []
+            tsz, = struct.unpack("<I", hdr[4:8])
+            body = f.read(tsz)
+        ms, pos = [], 0
+        while pos + 6 <= len(body):
+            st = body[pos:pos+4]
+            ssz, = struct.unpack("<H", body[pos+4:pos+6])
+            if st == b"MAST":
+                ms.append(body[pos+6:pos+6+ssz].rstrip(b"\x00").decode("utf-8", "ignore"))
+            pos += 6 + ssz
+        return ms
 
-    tes4_sz, = struct.unpack("<I", blob[4:8])
-    tes4_body = bytes(blob[24:24 + tes4_sz])
-    esl_masters: List[str] = []
-    other_tes4_subs = bytearray()
-    p = 0
-    while p + 6 <= len(tes4_body):
-        st = tes4_body[p:p+4]
-        ssz, = struct.unpack("<H", tes4_body[p+4:p+6])
-        ch = tes4_body[p+6:p+6+ssz]
-        p += 6 + ssz
-        if st == b"MAST":
-            esl_masters.append(ch.rstrip(b"\x00").decode("utf-8", "ignore"))
-        elif st == b"DATA" and esl_masters:
-            continue
-        else:
-            other_tes4_subs.extend(st + struct.pack("<H", ssz) + ch)
-
-    slot_to_addon_omods: Dict[str, List[str]] = {}
-    for om in addon_parsed.get("omod_list", []):
-        sl = _infer_omod_slot(om)
-        if sl:
-            slot_to_addon_omods.setdefault(sl, []).append(om["form_id"])
-    if not slot_to_addon_omods:
-        return 0
-
-    addon_name = addon_parsed["plugin_name"]
-    if not any(m.lower() == addon_name.lower() for m in esl_masters):
-        esl_masters.append(addon_name)
-    addon_m_idx = next(i for i, m in enumerate(esl_masters) if m.lower() == addon_name.lower())
-
-    injected_templates = 0
-    new_weap_records = bytearray()
-
-    for wt in weap_targets:
-        m_name = wt["master_plugin"]
-        m_path = wt["master_path"]
-        target_low_fid = int(wt["weap_fid"], 16)
-        mp = parse_plugin(m_path)
-        src_masters = list(mp.get("masters", [])) + [m_name]
-
-        m_omod_slot: Dict[int, str] = {}
-        for om in mp.get("omod_list", []):
-            sl = _infer_omod_slot(om)
-            if sl:
-                m_omod_slot[int(om["form_id"], 16)] = sl
-
-        with open(m_path, "rb") as mf:
-            mdata = mf.read()
-
-        m_tes4, = struct.unpack("<I", mdata[4:8])
-        off = 24 + m_tes4
-        raw_weap_body = None
-        while off + 24 <= len(mdata):
-            rt = mdata[off:off+4]
-            rsz, = struct.unpack("<I", mdata[off+4:off+8])
+    def _extract_raw_weap(p_path, target_local_id):
+        with open(p_path, "rb") as f:
+            blob = f.read()
+        tsz, = struct.unpack("<I", blob[4:8])
+        off = 24 + tsz
+        while off + 24 <= len(blob):
+            rt = blob[off:off+4]
+            rsz, = struct.unpack("<I", blob[off+4:off+8])
             if rt == b"GRUP":
                 off += 24
                 continue
-            flags, fid = struct.unpack("<II", mdata[off+8:off+16])
-            rbody = mdata[off+24:off+24+rsz]
+            rflags, fid = struct.unpack("<II", blob[off+8:off+16])
+            if rt == b"WEAP" and (fid & 0x00FFFFFF) == target_local_id:
+                raw = blob[off+24:off+24+rsz]
+                if rflags & 0x00040000:
+                    raw = zlib.decompress(raw[4:])
+                return rflags & ~0x00040000, bytearray(raw)
             off += 24 + rsz
-            if rt == b"WEAP" and (fid & 0x00FFFFFF) == target_low_fid and (fid >> 24) >= len(mp.get("masters", [])):
-                if flags & 0x00040000:
-                    rbody = zlib.decompress(rbody[4:])
-                raw_weap_body = rbody
-                break
+        return None, None
 
-        if not raw_weap_body:
+    master_list = ["Fallout4.esm"]
+    def _m_idx(m_name):
+        for i, existing in enumerate(master_list):
+            if existing.lower() == m_name.lower():
+                return i
+        master_list.append(m_name)
+        return len(master_list) - 1
+
+    weap_grups = bytearray()
+    injected_count = 0
+
+    for item in addon_entries:
+        addon_plug = item["addon_plugin"]
+        addon_path = plugin_paths.get(addon_plug.lower())
+        if not addon_path or not os.path.isfile(addon_path):
+            continue
+        addon_masters = _read_masters(addon_path)
+        addon_self_idx = _m_idx(addon_plug)
+        slot_omods = build_omod_slot_targets(addon_path, addon_masters, active_plugins)
+        if not slot_omods:
             continue
 
-        rebuilt = bytearray()
-        obte_pos = -1
-        orig_obte = 0
-        base_obts_list: List[bytearray] = []
-        added_for_weap = 0
+        for target_weap in item.get("target_weapons", []):
+            if "|" not in target_weap:
+                continue
+            w_plug, w_hex = target_weap.split("|", 1)
+            w_path = plugin_paths.get(w_plug.lower())
+            if not w_path or not os.path.isfile(w_path):
+                continue
+            w_masters = _read_masters(w_path)
+            w_self_idx = _m_idx(w_plug)
+            local_id = int(w_hex, 16) & 0x00FFFFFF
+            w_flags, w_body = _extract_raw_weap(w_path, local_id)
+            if w_body is None:
+                continue
 
-        for st, ch, is_big in _iter_subs_raw(raw_weap_body):
-            if st == b"OBTE" and len(ch) == 4:
-                orig_obte, = struct.unpack("<I", ch)
-                obte_pos = len(rebuilt) + 6
-                rebuilt.extend(st + b"\x04\x00" + ch)
-            elif st == b"OBTS":
-                remapped = _remap_obts_blob(ch, src_masters, esl_masters)
-                base_obts_list.append(remapped)
-                rebuilt.extend(st + struct.pack("<H", len(remapped)) + remapped)
-            elif st == b"STOP":
-                if base_obts_list:
-                    max_variants = max(len(v) for v in slot_to_addon_omods.values())
-                    for v_idx in range(min(max_variants, 12)):
-                        tmpl = bytearray(base_obts_list[v_idx % len(base_obts_list)])
-                        if len(tmpl) < 18:
-                            continue
-                        tmpl[14] = 0
-                        att_cnt, = struct.unpack("<I", tmpl[0:4])
-                        kw_cnt = tmpl[15]
-                        apos = 16 + kw_cnt * 4 + 2
-                        swapped = False
-                        for _ in range(att_cnt):
-                            if apos + 7 <= len(tmpl):
-                                cur_fid, = struct.unpack("<I", tmpl[apos:apos+4])
-                                cur_low = cur_fid & 0x00FFFFFF
-                                sl = m_omod_slot.get(cur_low, "")
-                                if sl and sl in slot_to_addon_omods:
-                                    cand_list = slot_to_addon_omods[sl]
-                                    chosen_hex = cand_list[v_idx % len(cand_list)]
-                                    new_fid = (addon_m_idx << 24) | (int(chosen_hex, 16) & 0x00FFFFFF)
-                                    tmpl[apos:apos+4] = struct.pack("<I", new_fid)
-                                    swapped = True
-                            apos += 7
-                        if swapped:
-                            rebuilt.extend(b"OBTS" + struct.pack("<H", len(tmpl)) + tmpl)
-                            added_for_weap += 1
-                if obte_pos != -1 and added_for_weap > 0:
-                    rebuilt[obte_pos:obte_pos+4] = struct.pack("<I", orig_obte + added_for_weap)
-                    injected_templates += added_for_weap
-                rebuilt.extend(b"STOP\x00\x00")
-            else:
-                if is_big:
-                    rebuilt.extend(b"XXXX\x04\x00" + struct.pack("<I", len(ch)) + st + b"\x00\x00" + ch)
-                else:
-                    rebuilt.extend(st + struct.pack("<H", len(ch)) + ch)
+            obts_pos = -1
+            p = 0
+            while p + 6 <= len(w_body):
+                st = bytes(w_body[p:p+4])
+                ssz, = struct.unpack("<H", w_body[p+4:p+6])
+                if st == b"OBTS":
+                    obts_pos = p
+                    break
+                p += 6 + ssz
+            if obts_pos == -1:
+                continue
 
-        if added_for_weap > 0:
-            if not any(m.lower() == m_name.lower() for m in esl_masters):
-                esl_masters.append(m_name)
-            m_idx = next(i for i, m in enumerate(esl_masters) if m.lower() == m_name.lower())
-            override_fid = (m_idx << 24) | target_low_fid
-            rec_hdr = b"WEAP" + struct.pack("<IIIIH", len(rebuilt), 0, override_fid, 0, 131) + b"\x00\x00"
-            grup_hdr = b"GRUP" + struct.pack("<I", 24 + len(rec_hdr) + len(rebuilt)) + b"WEAP" + struct.pack("<III", 0, 0, 0)
-            new_weap_records.extend(grup_hdr + rec_hdr + rebuilt)
+            obts_sz, = struct.unpack("<H", w_body[obts_pos+4:obts_pos+6])
+            obts_data = bytearray(w_body[obts_pos+6:obts_pos+6+obts_sz])
+            if len(obts_data) < 18:
+                continue
 
-    if injected_templates == 0:
+            # Remap existing OBTS keyword FormIDs and OMOD FormIDs into RobCo_AttachmentTemplates.esp master table
+            att_cnt, = struct.unpack("<I", obts_data[0:4])
+            kw_cnt = obts_data[16]
+            kw_pos = 18
+            for _ in range(kw_cnt):
+                if kw_pos + 4 <= len(obts_data):
+                    kfid, = struct.unpack("<I", obts_data[kw_pos:kw_pos+4])
+                    kidx = kfid >> 24
+                    k_plug = w_masters[kidx] if kidx < len(w_masters) else w_plug
+                    obts_data[kw_pos:kw_pos+4] = struct.pack("<I", (_m_idx(k_plug) << 24) | (kfid & 0x00FFFFFF))
+                kw_pos += 4
+
+            apos = kw_pos + 2
+            for _ in range(att_cnt):
+                if apos + 7 <= len(obts_data):
+                    ofid, = struct.unpack("<I", obts_data[apos:apos+4])
+                    oidx = ofid >> 24
+                    o_plug = w_masters[oidx] if oidx < len(w_masters) else w_plug
+                    obts_data[apos:apos+4] = struct.pack("<I", (_m_idx(o_plug) << 24) | (ofid & 0x00FFFFFF))
+                apos += 7
+
+            added = 0
+            for omod_list in slot_omods.values():
+                for o_fid in omod_list:
+                    new_fid = (addon_self_idx << 24) | (o_fid & 0x00FFFFFF)
+                    obts_data.extend(struct.pack("<IHB", new_fid, 1, 0))
+                    att_cnt += 1
+                    added += 1
+
+            if added == 0:
+                continue
+
+            obts_data[0:4] = struct.pack("<I", att_cnt)
+            new_obts = b"OBTS" + struct.pack("<H", len(obts_data)) + obts_data
+            w_body = w_body[:obts_pos] + new_obts + w_body[obts_pos+6+obts_sz:]
+
+            full_fid = (w_self_idx << 24) | local_id
+            rec_hdr = b"WEAP" + struct.pack("<IIII", len(w_body), w_flags, full_fid, 0) + b"\x00\x00\x00\x00"
+            grup_hdr = b"GRUP" + struct.pack("<I", 24 + len(rec_hdr) + len(w_body)) + b"WEAP" + struct.pack("<III", 0, 0, 0)
+            weap_grups.extend(grup_hdr + rec_hdr + w_body)
+            injected_count += 1
+
+    if injected_count == 0:
         return 0
 
-    new_tes4_body = bytearray(other_tes4_subs)
-    for dm in esl_masters:
+    tes4_subs = bytearray(b"HEDR\x0C\x00" + struct.pack("<fII", 1.0, max(1, injected_count), 0x00000800))
+    tes4_subs.extend(b"CNAM\x0D\x00RobCoWizard\x00")
+    for dm in master_list:
         mb = dm.encode("utf-8") + b"\x00"
-        new_tes4_body.extend(b"MAST" + struct.pack("<H", len(mb)) + mb + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00")
-
-    old_body_tail = blob[24 + tes4_sz:]
-    new_tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(new_tes4_body), 0x00000200, 0, 0, 131) + b"\x00\x00"
-    final_blob = bytearray(new_tes4_hdr) + new_tes4_body + old_body_tail + new_weap_records
-
-    hedr_pos = final_blob.find(b"HEDR\x0C\x00")
-    if hedr_pos != -1:
-        cur_cnt, = struct.unpack("<I", final_blob[hedr_pos+10:hedr_pos+14])
-        final_blob[hedr_pos+10:hedr_pos+14] = struct.pack("<I", cur_cnt + len(weap_targets))
-
-    with open(esl_path, "wb") as f:
-        f.write(final_blob)
-    return injected_templates
-
+        tes4_subs.extend(b"MAST" + struct.pack("<H", len(mb)) + mb + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+    tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(tes4_subs), 0x00000200, 0, 0, 131) + b"\x00\x00"
+    with open(esp_path, "wb") as f:
+        f.write(bytes(tes4_hdr) + bytes(tes4_subs) + bytes(weap_grups))
+    return injected_count
 
 def prune_missing_masters_from_esl(esl_path: str, active_plugins: set) -> int:
     """Remove missing/disabled masters and orphaned OBTS WEAP records from RobCo_AutoSubLists.esp."""

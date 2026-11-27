@@ -650,7 +650,7 @@ class BatchPreviewDialog(QDialog):
                     except Exception:
                         pass
 
-        for legacy in ("RobCo_AutoSubLists.esl",):
+        for legacy in ("RobCo_AutoSubLists.esl", "RobCo_AttachmentTemplates.esp"):
             lp = os.path.join(out_root, legacy)
             if os.path.isfile(lp):
                 try: os.remove(lp)
@@ -990,7 +990,7 @@ class BatchPreviewDialog(QDialog):
             from .robco_engine import prune_missing_masters_from_esl
             plist = self.organizer.pluginList()
             act = {pn for pn in plist.pluginNames() if bool(plist.state(pn) & 2)}
-            prune_missing_masters_from_esl(os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esp"), act)
+            prune_missing_masters_from_esl(os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AttachmentTemplates.esp"), act)
             if os.path.isdir(ini_dir):
                 for fn in os.listdir(ini_dir):
                     low = fn.lower()

@@ -164,7 +164,7 @@ def auto_activate_output(organizer) -> None:
     try:
         import mobase
         plist = organizer.pluginList()
-        for pn in ("RobCo_AutoSubLists.esp", "RobCo_OverrideShield.esp"):
+        for pn in ("RobCo_AutoSubLists.esp", "RobCo_AttachmentTemplates.esp", "RobCo_OverrideShield.esp"):
             if pn in plist.pluginNames():
                 plist.setState(pn, mobase.PluginState.ACTIVE)
     except Exception:
