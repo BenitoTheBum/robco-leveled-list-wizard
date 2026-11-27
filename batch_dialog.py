@@ -942,6 +942,7 @@ class BatchPreviewDialog(QDialog):
                     sug_input["npc_list"] = []
                 sug = suggest_targets_heuristic(sug_input, self._counts)
                 sug.setdefault("weight", 1)
+                user_ovs = load_user_overrides(mods_dir)
                 saved_ov = user_ovs.get(fname.lower())
                 if isinstance(saved_ov, dict) and saved_ov.get("targets"):
                     sug.update(saved_ov)
