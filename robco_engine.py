@@ -387,6 +387,18 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
             tier_key = "early"
         tier_def = _TIERS[tier_key]
 
+    _cat_allowed = set()
+    if weap_recs:
+        _cat_allowed |= _WEAPON_FIDS
+    if armo_recs:
+        _cat_allowed |= _ARMOR_FIDS
+    if npc_recs and not weap_recs and not armo_recs:
+        _cat_allowed |= {fid for _, fid in CREATURE_LISTS}
+    if _cat_allowed:
+        targets = [t for t in targets if t in _cat_allowed]
+    if npc_recs and not weap_recs and not armo_recs and not targets:
+        _add_if_open("Fallout4.esm|0x0002059B")
+
     return {
         "targets":    targets,
         "confidence": confidence,
