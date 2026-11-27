@@ -387,6 +387,14 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
             tier_key = "early"
         tier_def = _TIERS[tier_key]
 
+    is_creature_with_skins = bool(
+        npc_recs and not weap_recs
+        and not any(r.get("category") == "ARMO" for r in parsed.get("root_lvli", []))
+        and any(k in plugin_low for k in ("centaur", "creature", "monster", "mutant", "ghoul", "deathclaw", "mirelurk", "radscorpion", "hound", "beast"))
+    )
+    if is_creature_with_skins:
+        armo_recs = []
+
     _cat_allowed = set()
     if weap_recs:
         _cat_allowed |= _WEAPON_FIDS
