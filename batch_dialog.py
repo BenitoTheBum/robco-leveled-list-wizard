@@ -685,7 +685,7 @@ class BatchPreviewDialog(QDialog):
         chk = self.table.item(row, 0)
         if chk:
             _, _, parsed, _ = chk.data(QtUserRole)
-            if sug.get("omod_map"):
+            if sug.get("omod_map") or sug.get("obts_targets"):
                 omods = parsed.get("omod_list", [])
                 preview = ", ".join(o.get("name") or o.get("edid") or o.get("form_id", "?") for o in omods[:4])
                 if len(omods) > 4:
@@ -847,13 +847,26 @@ class BatchPreviewDialog(QDialog):
                     continue
 
                 if parsed.get("is_attachment_addon"):
-                    from .robco_engine import build_omod_slot_targets
+                    from .robco_engine import build_omod_slot_targets, find_obts_weapon_targets
                     omod_map, omod_labels = build_omod_slot_targets(parsed, self.organizer.resolvePath)
-                    if omod_map:
-                        self._label_map.update(omod_labels)
+                    obts_targets = [] if omod_map else find_obts_weapon_targets(parsed, self.organizer.resolvePath)
+                    if omod_map or obts_targets:
+                        if omod_map:
+                            self._label_map.update(omod_labels)
+                            t_list = sorted(omod_map.keys())
+                            tag_lbl = "[OMOD Addon]"
+                        else:
+                            t_list = []
+                            for wt in obts_targets:
+                                k = f"{wt['master_plugin']}|{wt['weap_fid']}"
+                                self._label_map[k] = f"[{os.path.splitext(wt['master_plugin'])[0]}] {wt['weap_edid'] or wt['weap_fid']} (OBTS)"
+                                t_list.append(k)
+                            tag_lbl = "[OBTS Addon]"
                         sug = {
-                            "targets": sorted(omod_map.keys()),
+                            "targets": t_list,
                             "omod_map": omod_map,
+                            "obts_targets": obts_targets,
+                            "addon_path": plugin_path,
                             "confidence": "high",
                             "tier": "omod",
                             "level": 1,
@@ -875,11 +888,11 @@ class BatchPreviewDialog(QDialog):
                         cb_lay.addWidget(cb)
                         self.table.setCellWidget(row, 0, cb_wrap)
 
-                        self.table.setItem(row, 1, QTableWidgetItem(f"{mod_name} [OMOD Addon]"))
+                        self.table.setItem(row, 1, QTableWidgetItem(f"{mod_name} {tag_lbl}"))
                         self.table.setItem(row, 2, QTableWidgetItem(fname))
                         self._refresh_row_display(row, sug)
                     else:
-                        self._skipped_mods.append((mod_name, fname, "Attachment addon (base weapon uses hardcoded OBTS; requires Part 2 OBTS patcher)"))
+                        self._skipped_mods.append((mod_name, fname, "Attachment addon (no matching master LVLI or OBTS weapon templates)"))
                     continue
 
                 has_new_gear = bool(parsed.get("weap_families") or parsed.get("armo_list"))
@@ -968,6 +981,26 @@ class BatchPreviewDialog(QDialog):
                     target_labels = " | ".join(self._label_map.get(t, t) for t in sug["targets"])
                     audit_rows.append([
                         f"{stem}_RobCo_OMOD.ini", mod_name, fname,
+                        injected_items, target_labels, 1, 0, 1,
+                    ])
+                continue
+
+            if sug.get("obts_targets"):
+                from .robco_engine import inject_obts_templates
+                esl_path = os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esl")
+                added_cnt = inject_obts_templates(
+                    esl_path, parsed, sug.get("addon_path", ""),
+                    sug["obts_targets"], self.organizer.resolvePath,
+                )
+                if added_cnt > 0:
+                    written += 1
+                    injected_items = "; ".join(
+                        f"[OMOD] {o.get('name') or o.get('edid') or o.get('form_id')} ({o.get('form_id')})"
+                        for o in parsed.get("omod_list", [])
+                    )
+                    target_labels = " | ".join(self._label_map.get(t, t) for t in sug["targets"])
+                    audit_rows.append([
+                        f"RobCo_AutoSubLists.esl (+{added_cnt} OBTS)", mod_name, fname,
                         injected_items, target_labels, 1, 0, 1,
                     ])
                 continue
