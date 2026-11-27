@@ -321,11 +321,11 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
             _add_if_open("Fallout4.esm|0x0007645A")
 
     for r in npc_recs:
-        txt = r.get("name", "").lower()
+        txt = f"{r.get('name', '')} {r.get('edid', '')} {plugin_low}".lower()
         if any(k in txt for k in ("behemoth",)):
             _add_if_open("Fallout4.esm|0x0012B97D")
             matched_specific = True
-        elif any(k in txt for k in ("supermutant", "super mutant", "supermutant", "supermutant", "mutant", "centaur")):
+        elif any(k in txt for k in ("supermutant", "super mutant", "supermutant", "supermutant", "mutant", "nightkin", "centaur")):
             _add_if_open("Fallout4.esm|0x001478BC")
             matched_specific = True
         elif any(k in txt for k in ("deathclaw",)):
