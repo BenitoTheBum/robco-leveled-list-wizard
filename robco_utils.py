@@ -1,3 +1,4 @@
+import shutil
 """Shared PyQt compatibility shims, constants, and JSON persistence for RobCo Wizard."""
 
 import json
@@ -21,10 +22,20 @@ MsgNo       = QMessageBox.StandardButton.No  if hasattr(QMessageBox, "StandardBu
 
 OUTPUT_MOD_NAME = "RobCo Auto-Injected Patches"
 PLUGIN_DIR      = os.path.dirname(__file__)
-IGNORE_FILE     = os.path.join(PLUGIN_DIR, "ignored_mods.json")
-PREFS_FILE      = os.path.join(PLUGIN_DIR, "wizard_prefs.json")
-BLACKLIST_FILE  = os.path.join(PLUGIN_DIR, "batch_blacklist.json")
-WHITELIST_FILE  = os.path.join(PLUGIN_DIR, "shield_whitelist.json")
+_APPDATA_CFG    = os.path.join(os.environ.get("LOCALAPPDATA", PLUGIN_DIR), "RobCoLeveledListWizard")
+os.makedirs(_APPDATA_CFG, exist_ok=True)
+for _fn in ("ignored_mods.json", "wizard_prefs.json", "batch_blacklist.json", "shield_whitelist.json"):
+    _legacy = os.path.join(PLUGIN_DIR, _fn)
+    _target = os.path.join(_APPDATA_CFG, _fn)
+    if os.path.isfile(_legacy) and not os.path.isfile(_target):
+        try:
+            shutil.copy2(_legacy, _target)
+        except Exception:
+            pass
+IGNORE_FILE     = os.path.join(_APPDATA_CFG, "ignored_mods.json")
+PREFS_FILE      = os.path.join(_APPDATA_CFG, "wizard_prefs.json")
+BLACKLIST_FILE  = os.path.join(_APPDATA_CFG, "batch_blacklist.json")
+WHITELIST_FILE  = os.path.join(_APPDATA_CFG, "shield_whitelist.json")
 
 
 def exec_dialog(dlg):
