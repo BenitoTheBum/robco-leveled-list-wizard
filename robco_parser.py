@@ -333,7 +333,12 @@ def parse_plugin(filepath: str) -> dict:
         "dlccoast.esm", "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm",
     }
     has_custom_master = any(m.lower() not in _vanilla_masters for m in masters)
-    is_attachment_addon = bool(len(omod_recs) >= 3 and len(weap_families) == 0 and not armo_list and has_custom_master)
+    _vanilla_masters = {
+        "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm",
+        "dlccoast.esm", "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm",
+    }
+    has_custom_master = any(m.lower() not in _vanilla_masters for m in masters)
+    is_attachment_addon = bool(has_custom_master and len(omod_recs) >= 3 and len(weap_families) <= 2 and not armo_list)
     has_records = bool(root_lvli or weap_families or armo_list or npc_list or is_attachment_addon)
 
     return {
