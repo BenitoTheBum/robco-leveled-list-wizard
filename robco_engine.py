@@ -586,7 +586,10 @@ def _infer_omod_slot(omod: dict) -> str:
 
 def build_omod_slot_targets(addon_parsed: dict, resolve_plugin_fn) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
     """Map attachment addon OMOD FormIDs onto matching attachment LVLIs in master weapon plugins."""
-    from .robco_parser import parse_plugin
+    try:
+        from .robco_parser import parse_plugin
+    except ImportError:
+        from robco_parser import parse_plugin
 
     omods = addon_parsed.get("omod_list", [])
     if not omods:
@@ -706,7 +709,10 @@ def _remap_obts_blob(obts: bytes, src_masters: List[str], dst_masters: List[str]
 
 def find_obts_weapon_targets(addon_parsed: dict, resolve_plugin_fn) -> List[dict]:
     """Find non-unique base WEAP records in custom masters that use OBTS templates."""
-    from .robco_parser import parse_plugin
+    try:
+        from .robco_parser import parse_plugin
+    except ImportError:
+        from robco_parser import parse_plugin
 
     omods = addon_parsed.get("omod_list", [])
     if not omods:
@@ -746,7 +752,10 @@ def inject_obts_templates(
 ) -> int:
     """Clone base WEAP records into RobCo_AutoSubLists.esl and append OBTS variants using addon OMODs."""
     import zlib
-    from .robco_parser import parse_plugin
+    try:
+        from .robco_parser import parse_plugin
+    except ImportError:
+        from robco_parser import parse_plugin
 
     if not weap_targets or not addon_parsed.get("omod_list"):
         return 0
