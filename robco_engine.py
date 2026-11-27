@@ -235,7 +235,7 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
         elif any(k in txt for k in ("institute", "synth", "courser")):
             _add_if_open("Fallout4.esm|0x001A7777")
             matched_specific = True
-        elif any(k in txt for k in ("supermutant", "super_mutant", "mutant")):
+        elif any(k in txt for k in ("centaur", "supermutant", "super_mutant", "mutant")):
             _add_if_open("Fallout4.esm|0x0004691D")
             matched_specific = True
         elif any(k in txt for k in ("triggerman", "mobster", "mafia")):
