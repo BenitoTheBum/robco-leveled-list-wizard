@@ -650,6 +650,11 @@ class BatchPreviewDialog(QDialog):
                     except Exception:
                         pass
 
+        for legacy in ("RobCo_AutoSubLists.esl",):
+            lp = os.path.join(out_root, legacy)
+            if os.path.isfile(lp):
+                try: os.remove(lp)
+                except Exception: pass
         esl_path = os.path.join(out_root, "RobCo_AutoSubLists.esp")
         if os.path.isfile(esl_path):
             try:
