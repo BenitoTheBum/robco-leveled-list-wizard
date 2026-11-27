@@ -147,7 +147,7 @@ def build_override_shield(
     mast = b"MAST" + struct.pack("<H", 13) + b"Fallout4.esm\x00"
     data_sub = b"DATA" + struct.pack("<H", 8) + struct.pack("<Q", 0)
     tes4_subs = hedr + cnam + mast + data_sub
-    tes4 = b"TES4" + struct.pack("<IIIIII", len(tes4_subs), 0, 0, 0, 131, 0) + tes4_subs
+    tes4 = b"TES4" + struct.pack("<IIIIH", len(tes4_subs), 0, 0, 0, 131) + b"\x00\x00" + tes4_subs
 
     os.makedirs(os.path.dirname(out_esp_path), exist_ok=True)
     with open(out_esp_path, "wb") as f:
