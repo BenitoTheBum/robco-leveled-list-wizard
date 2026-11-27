@@ -745,9 +745,12 @@ def find_obts_weapon_targets(addon_parsed: dict, resolve_plugin_fn) -> List[dict
     return targets
 
 
-def inject_obts_templates(mods_dir: str, out_mod_name: str, active_plugins: list,
-                          addon_entries: list, *_extra) -> int:
+def inject_obts_templates(mods_dir: str, arg2, arg3, arg4="RobCo Auto-Injected Patches", *_extra) -> int:
     """Write cloned WEAP records with appended OBTS attachment combinations into ESL-flagged RobCo_AttachmentTemplates.esp."""
+    if isinstance(arg2, str):
+        out_mod_name, active_plugins, addon_entries = arg2, arg3, arg4
+    else:
+        addon_entries, active_plugins, out_mod_name = arg2, arg3, arg4
     if not addon_entries:
         return 0
     esp_path = os.path.join(mods_dir, out_mod_name, "RobCo_AttachmentTemplates.esp")
