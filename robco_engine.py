@@ -860,6 +860,12 @@ def inject_obts_templates(esl_path: str, addon_parsed: dict, addon_path: str,
                                 added_pairs += 1
                         obuf[0:4] = struct.pack("<I", att_cnt)
                         rebuilt.extend(b"OBTS" + struct.pack("<H", len(obuf)) + obuf)
+                    elif st == b"APPR" and not is_big:
+                        ap_buf = bytearray(sb)
+                        for kp in range(0, len(ap_buf) - 3, 4):
+                            kraw, = struct.unpack("<I", ap_buf[kp:kp+4])
+                            ap_buf[kp:kp+4] = struct.pack("<I", _remap_fid(kraw, src_masters, existing_masters))
+                        rebuilt.extend(b"APPR" + struct.pack("<H", len(ap_buf)) + ap_buf)
                     elif is_big:
                         rebuilt.extend(b"XXXX\x04\x00" + struct.pack("<I", len(sb)) + st + b"\x00\x00" + sb)
                     else:
