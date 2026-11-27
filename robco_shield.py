@@ -4,6 +4,7 @@ import os
 import struct
 from typing import Iterable, Set
 
+from .robco_utils import OUTPUT_MOD_NAME
 from .robco_parser import find_already_patched_plugins, parse_plugin
 
 BUILTIN_PROTECTED_OVERHAULS = {
@@ -86,7 +87,7 @@ def build_override_shield(
         from .robco_engine import prune_missing_masters_from_esl
         plist = organizer.pluginList()
         act = {pn for pn in plist.pluginNames() if bool(plist.state(pn) & 2)}
-        prune_missing_masters_from_esl(os.path.join(mods_dir, "RobCo Auto-Injected Patches", "RobCo_AutoSubLists.esl"), act)
+        prune_missing_masters_from_esl(os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esl"), act)
     except Exception:
         pass
     patched_plugins = find_already_patched_plugins(mods_dir)

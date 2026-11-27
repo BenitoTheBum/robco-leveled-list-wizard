@@ -87,7 +87,6 @@ def parse_plugin(filepath: str) -> dict:
     raw_armo = {}
     raw_npc = {}
     raw_lvli = {}
-    raw_lvln = {}
     omod_recs = []
     has_script_injector = False
     vanilla_ll_overrides = set()
@@ -244,8 +243,6 @@ def parse_plugin(filepath: str) -> dict:
                 }
             elif tag == "LVLI":
                 raw_lvli[fid_hex] = {"type": "LVLI", "form_id": fid_hex, "edid": edid, "refs": lvlo_refs}
-            elif tag == "LVLN":
-                raw_lvln[fid_hex] = {"type": "LVLN", "form_id": fid_hex, "edid": edid, "refs": lvlo_refs}
             elif tag == "OMOD":
                 omod_recs.append({
                     "type": "OMOD",

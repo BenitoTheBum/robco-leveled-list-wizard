@@ -1,6 +1,5 @@
 """RobCo Leveled List engine: heuristics, INI generation, and ESL bundling."""
 
-import json
 import os
 import re
 from typing import Dict, List, Optional, Tuple
@@ -325,7 +324,7 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
         if any(k in txt for k in ("behemoth",)):
             _add_if_open("Fallout4.esm|0x0012B97D")
             matched_specific = True
-        elif any(k in txt for k in ("supermutant", "super mutant", "supermutant", "supermutant", "mutant", "nightkin", "centaur")):
+        elif any(k in txt for k in ("supermutant", "super mutant", "mutant", "nightkin", "centaur")):
             _add_if_open("Fallout4.esm|0x001478BC")
             matched_specific = True
         elif any(k in txt for k in ("deathclaw",)):

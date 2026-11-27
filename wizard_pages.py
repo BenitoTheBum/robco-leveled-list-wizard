@@ -476,8 +476,6 @@ class SelectOverhaulTargetsPage(QWizardPage):
                 self._clear_layout(item.layout())
 
     def initializePage(self):
-        from .robco_shield import is_protected_overhaul
-
         self._clear_layout(self._cols_layout)
         self._checkboxes.clear()
         self._cb_category.clear()

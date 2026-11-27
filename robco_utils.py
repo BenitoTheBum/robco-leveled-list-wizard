@@ -115,3 +115,26 @@ def delete_user_override(mods_dir: str, plugin_fname: str) -> bool:
         except Exception:
             pass
     return False
+
+
+def load_blacklist() -> tuple:
+    if os.path.isfile(BLACKLIST_FILE):
+        try:
+            with open(BLACKLIST_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                plugins = {x.strip().lower() for x in data.get("plugins", []) if isinstance(x, str) and x.strip()}
+                mods = {x.strip().lower() for x in data.get("mod_names", []) if isinstance(x, str) and x.strip()}
+                return plugins, mods
+        except Exception:
+            pass
+    return set(), set()
+
+
+def save_blacklist(plugins: set, mod_names: set = None) -> None:
+    if mod_names is None:
+        _, mod_names = load_blacklist()
+    try:
+        with open(BLACKLIST_FILE, "w", encoding="utf-8") as f:
+            json.dump({"plugins": sorted(plugins), "mod_names": sorted(mod_names)}, f, indent=2)
+    except Exception:
+        pass

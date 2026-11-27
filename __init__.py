@@ -17,9 +17,8 @@ from .robco_shield import is_protected_overhaul
 from .wizard_pages import RobCoFomodWizard
 
 from .robco_utils import (
-    OUTPUT_MOD_NAME, IGNORE_FILE, PREFS_FILE,
-    load_json_set, save_json_set,
-    load_wizard_prefs, save_wizard_prefs,
+    OUTPUT_MOD_NAME, IGNORE_FILE,
+    load_json_set, save_json_set, load_wizard_prefs, load_blacklist,
 )
 
 def load_ignored_mods() -> Set[str]:
@@ -55,7 +54,7 @@ class RobCoWizardPlugin(mobase.IPluginTool):
         return "RobCo"
 
     def version(self) -> str:
-        return "0.1.0-alpha"
+        return "0.2.0-alpha"
 
     def isActive(self) -> bool:
         return True
@@ -88,11 +87,6 @@ class RobCoWizardPlugin(mobase.IPluginTool):
                 "Automatically launch wizard when installing a mod with unpatched leveled lists",
                 True,
             ),
-            mobase.PluginSetting(
-                "ollama_model",
-                "Ollama model name",
-                "llama3.2",
-            ),
         ]
 
     def _current_settings(self) -> Dict[str, object]:
@@ -120,12 +114,8 @@ class RobCoWizardPlugin(mobase.IPluginTool):
             return
 
         already_patched = find_already_patched_plugins(mods_dir)
-        try:
-            from .batch_dialog import _load_blacklist
-            _bl_p, _ = _load_blacklist()
-            already_patched |= _bl_p
-        except Exception:
-            pass
+        _bl_p, _ = load_blacklist()
+        already_patched |= _bl_p
         for fname in os.listdir(mod_path):
             if not fname.lower().endswith((".esp", ".esl")) or fname.lower() in already_patched:
                 continue

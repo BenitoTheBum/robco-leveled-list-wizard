@@ -40,8 +40,9 @@ def _stretch_mode():
 
 from .robco_utils import (
     QtChecked, QtUnchecked, QtUserRole,
-    OUTPUT_MOD_NAME, IGNORE_FILE, BLACKLIST_FILE,
+    OUTPUT_MOD_NAME, IGNORE_FILE,
     exec_dialog as _exec_dialog, load_json_set, save_json_set,
+    load_blacklist as _load_blacklist, save_blacklist as _save_blacklist, load_user_overrides,
 )
 
 
@@ -80,29 +81,6 @@ def _read_mo2_categories(mod_dir: str) -> set:
     except Exception:
         pass
     return set()
-
-
-def _load_blacklist() -> tuple:
-    if os.path.isfile(BLACKLIST_FILE):
-        try:
-            with open(BLACKLIST_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                plugins = {x.strip().lower() for x in data.get("plugins", []) if isinstance(x, str) and x.strip()}
-                mods = {x.strip().lower() for x in data.get("mod_names", []) if isinstance(x, str) and x.strip()}
-                return plugins, mods
-        except Exception:
-            pass
-    return set(), set()
-
-
-def _save_blacklist(plugins: set, mod_names: set = None):
-    if mod_names is None:
-        _, mod_names = _load_blacklist()
-    try:
-        with open(BLACKLIST_FILE, "w", encoding="utf-8") as f:
-            json.dump({"plugins": sorted(plugins), "mod_names": sorted(mod_names)}, f, indent=2)
-    except Exception:
-        pass
 
 
 def _load_ignored() -> set:
@@ -315,11 +293,6 @@ class BatchPreviewDialog(QDialog):
         header.setSectionResizeMode(4, _stretch_mode())
         layout.addWidget(self.table)
 
-        try:
-            from PyQt6.QtWidgets import QMenu
-        except ImportError:
-            from PyQt5.QtWidgets import QMenu
-
         btn_row = QHBoxLayout()
 
         btn_sel_menu = QPushButton("Selection & Blacklist")
@@ -505,6 +478,7 @@ class BatchPreviewDialog(QDialog):
             QMessageBox.information(self, "Blacklist Selected", "Select one or more rows in the table first.")
             return
         bl_plugins, bl_mods = _load_blacklist()
+        user_ovs = load_user_overrides(mods_dir)
         ignored = _load_ignored()
         added = []
         target_mods = set()
@@ -968,8 +942,7 @@ class BatchPreviewDialog(QDialog):
                     sug_input["npc_list"] = []
                 sug = suggest_targets_heuristic(sug_input, self._counts)
                 sug.setdefault("weight", 1)
-                from .robco_utils import load_user_overrides
-                saved_ov = load_user_overrides(mods_dir).get(fname.lower())
+                saved_ov = user_ovs.get(fname.lower())
                 if isinstance(saved_ov, dict) and saved_ov.get("targets"):
                     sug.update(saved_ov)
                     sug["confidence"] = "high"
@@ -1006,6 +979,10 @@ class BatchPreviewDialog(QDialog):
     # ------------------------------------------------------------------
     def _apply_batch(self):
         mods_dir = self.organizer.modsPath()
+        ini_dir  = os.path.join(
+            mods_dir, OUTPUT_MOD_NAME,
+            "F4SE", "Plugins", "RobCo_Patcher", "leveledList",
+        )
         try:
             from .robco_engine import prune_missing_masters_from_esl
             plist = self.organizer.pluginList()
@@ -1027,10 +1004,6 @@ class BatchPreviewDialog(QDialog):
                             pass
         except Exception:
             pass
-        ini_dir  = os.path.join(
-            mods_dir, OUTPUT_MOD_NAME,
-            "F4SE", "Plugins", "RobCo_Patcher", "leveledList",
-        )
         written = 0
         unchecked_skipped = []
         audit_rows = []
