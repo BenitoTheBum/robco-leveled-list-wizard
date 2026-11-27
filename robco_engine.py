@@ -746,7 +746,7 @@ def find_obts_weapon_targets(addon_parsed: dict, resolve_plugin_fn) -> List[dict
 
 
 def inject_obts_templates(mods_dir: str, active_plugins: list, addon_entries: list,
-                          out_mod_name: str = "RobCo Auto-Injected Patches") -> int:
+                          out_mod_name: str = "RobCo Auto-Injected Patches", *_extra) -> int:
     """Write cloned WEAP records with appended OBTS attachment combinations into ESL-flagged RobCo_AttachmentTemplates.esp."""
     if not addon_entries:
         return 0
