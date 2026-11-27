@@ -57,9 +57,13 @@ def parse_plugin(filepath: str) -> dict:
         "vanilla_ll_overrides": [],
         "lvlo_levels": [],
         "root_lvli": [],
+        "masters": [],
         "weap_families": [],
         "armo_list": [],
         "npc_list": [],
+        "omod_list": [],
+        "lvli_list": [],
+        "is_attachment_addon": False,
     }
     if not os.path.isfile(filepath):
         return empty
@@ -73,16 +77,18 @@ def parse_plugin(filepath: str) -> dict:
     tes4_size, tes4_flags = struct.unpack("<II", data[4:12])
     is_esl = bool(tes4_flags & 0x00000200) or filepath.lower().endswith(".esl")
 
-    mast_count = 0
-    for stype, _ in _iter_subrecords(data[24:24 + tes4_size]):
+    masters = []
+    for stype, chunk in _iter_subrecords(data[24:24 + tes4_size]):
         if stype == b"MAST":
-            mast_count += 1
+            masters.append(chunk.rstrip(b"\x00").decode("utf-8", errors="ignore"))
+    mast_count = len(masters)
 
     raw_weap = {}
     raw_armo = {}
     raw_npc = {}
     raw_lvli = {}
     raw_lvln = {}
+    omod_recs = []
     has_script_injector = False
     vanilla_ll_overrides = set()
     lvlo_levels = set()
@@ -141,7 +147,7 @@ def parse_plugin(filepath: str) -> dict:
                 new_cell_count += 1
                 continue
 
-            if tag not in ("WEAP", "ARMO", "NPC_", "LVLI", "LVLN", "QUST"):
+            if tag not in ("WEAP", "ARMO", "NPC_", "LVLI", "LVLN", "QUST", "OMOD"):
                 continue
 
             body = data[body_start:body_end]
@@ -157,6 +163,8 @@ def parse_plugin(filepath: str) -> dict:
             has_eitm = False
             stat_val = 0
             lvlo_refs = []
+            attach_pt = ""
+            mnam_fids = []
 
             for stype, chunk in _iter_subrecords(body):
                 if stype == b"EDID":
@@ -178,6 +186,21 @@ def parse_plugin(filepath: str) -> dict:
                         lvlo_levels.add(lvl)
                     if (ref_fid >> 24) >= mast_count:
                         lvlo_refs.append(mask_fid(ref_fid))
+                elif tag == "OMOD" and stype == b"DATA" and len(chunk) >= 20:
+                    ap_raw = struct.unpack("<I", chunk[16:20])[0]
+                    if ap_raw:
+                        m_idx = ap_raw >> 24
+                        m_name = masters[m_idx] if m_idx < mast_count else plugin_name
+                        ap_masked = (ap_raw & 0x00000FFF) if (m_name.lower().endswith(".esl") or (m_idx >= mast_count and is_esl)) else (ap_raw & 0x00FFFFFF)
+                        attach_pt = f"{m_name}|0x{ap_masked:06X}"
+                elif tag == "OMOD" and stype == b"MNAM":
+                    for off in range(0, len(chunk) - 3, 4):
+                        kf = struct.unpack("<I", chunk[off:off+4])[0]
+                        if kf:
+                            m_idx = kf >> 24
+                            m_name = masters[m_idx] if m_idx < mast_count else plugin_name
+                            kf_masked = (kf & 0x00000FFF) if (m_name.lower().endswith(".esl") or (m_idx >= mast_count and is_esl)) else (kf & 0x00FFFFFF)
+                            mnam_fids.append(f"{m_name}|0x{kf_masked:06X}")
 
             if tag == "QUST":
                 low = edid.lower()
@@ -223,6 +246,15 @@ def parse_plugin(filepath: str) -> dict:
                 raw_lvli[fid_hex] = {"type": "LVLI", "form_id": fid_hex, "edid": edid, "refs": lvlo_refs}
             elif tag == "LVLN":
                 raw_lvln[fid_hex] = {"type": "LVLN", "form_id": fid_hex, "edid": edid, "refs": lvlo_refs}
+            elif tag == "OMOD":
+                omod_recs.append({
+                    "type": "OMOD",
+                    "form_id": fid_hex,
+                    "edid": edid,
+                    "name": full or edid or fid_hex,
+                    "attach_point": attach_pt,
+                    "mnam": mnam_fids,
+                })
 
     walk(24 + tes4_size, len(data))
 
@@ -231,6 +263,8 @@ def parse_plugin(filepath: str) -> dict:
         for r in lv["refs"]:
             if r in raw_lvli:
                 referenced_lvlis.add(r)
+
+    omod_fids = {o["form_id"] for o in omod_recs}
 
     def classify_lvli(fid: str, seen=None):
         seen = seen or set()
@@ -242,6 +276,8 @@ def parse_plugin(filepath: str) -> dict:
                 return "WEAP"
             if r in raw_armo:
                 return "ARMO"
+            if r in omod_fids:
+                return "OMOD_LIST"
             sub = classify_lvli(r, seen)
             if sub:
                 return sub
@@ -252,7 +288,7 @@ def parse_plugin(filepath: str) -> dict:
         if fid in referenced_lvlis:
             continue
         cat = classify_lvli(fid)
-        if cat:
+        if cat in ("WEAP", "ARMO"):
             root_lvli.append({
                 "type": "LVLI",
                 "category": cat,
@@ -288,22 +324,30 @@ def parse_plugin(filepath: str) -> dict:
 
     armo_list = list(raw_armo.values())
     npc_list = list(raw_npc.values())
-    has_records = bool(root_lvli or weap_families or armo_list or npc_list)
+    lvli_list = [
+        {"form_id": fid, "edid": lv["edid"], "category": classify_lvli(fid)}
+        for fid, lv in raw_lvli.items()
+    ]
+    is_attachment_addon = bool(len(omod_recs) >= 3 and len(weap_families) <= 2 and not armo_list)
+    has_records = bool(root_lvli or weap_families or armo_list or npc_list or is_attachment_addon)
 
     return {
         "plugin_name": plugin_name,
         "is_esl": is_esl,
+        "masters": masters,
         "has_script_injector": has_script_injector,
         "edits_vanilla_npcs": edits_vanilla_npcs,
         "has_unpatched_records": has_records,
         "vanilla_ll_overrides": sorted(vanilla_ll_overrides),
         "lvlo_levels": sorted(lvlo_levels),
-    "root_lvli": root_lvli,
-    "weap_families": weap_families,
-    "armo_list": armo_list,
-    "npc_list": npc_list,
-    "new_wrld_count": new_wrld_count,
-    "new_cell_count": new_cell_count,
-    "total_cell_edits": total_cell_edits,
-
+        "root_lvli": root_lvli,
+        "weap_families": weap_families,
+        "armo_list": armo_list,
+        "npc_list": npc_list,
+        "omod_list": omod_recs,
+        "lvli_list": lvli_list,
+        "is_attachment_addon": is_attachment_addon,
+        "new_wrld_count": new_wrld_count,
+        "new_cell_count": new_cell_count,
+        "total_cell_edits": total_cell_edits,
     }

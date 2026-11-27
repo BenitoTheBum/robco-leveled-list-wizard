@@ -606,7 +606,7 @@ class BatchPreviewDialog(QDialog):
         reply = QMessageBox.question(
             self,
             "Purge Wizard Output",
-            "Delete all wizard-generated *_RobCo_LL.ini files and reset RobCo_AutoSubLists.esl so you can re-generate fresh patches?\n\n"
+            "Delete all wizard-generated *_RobCo_LL.ini / *_RobCo_OMOD.ini files and reset RobCo_AutoSubLists.esl so you can re-generate fresh patches?\n\n"
             "(Custom INIs not ending in _RobCo_LL.ini and RobCo_OverrideShield.esp will be kept.)",
             yes_btn | no_btn,
         )
@@ -616,7 +616,7 @@ class BatchPreviewDialog(QDialog):
         removed_inis = 0
         if os.path.isdir(ini_dir):
             for fn in os.listdir(ini_dir):
-                if fn.lower().endswith("_robco_ll.ini"):
+                if fn.lower().endswith(("_robco_ll.ini", "_robco_omod.ini")):
                     try:
                         os.remove(os.path.join(ini_dir, fn))
                         removed_inis += 1
@@ -678,11 +678,20 @@ class BatchPreviewDialog(QDialog):
         chk = self.table.item(row, 0)
         if chk:
             _, _, parsed, _ = chk.data(QtUserRole)
-            sels = self._get_injectable_records(parsed)
-            summary, item_tip = self._format_items_summary(sels)
-            items_cell = QTableWidgetItem(summary)
-            items_cell.setToolTip(item_tip)
-            self.table.setItem(row, 3, items_cell)
+            if sug.get("omod_map"):
+                omods = parsed.get("omod_list", [])
+                preview = ", ".join(o.get("name") or o.get("edid") or o.get("form_id", "?") for o in omods[:4])
+                if len(omods) > 4:
+                    preview += f" (+{len(omods) - 4} more)"
+                items_cell = QTableWidgetItem(f"[{len(omods)} OMODs] {preview}")
+                items_cell.setToolTip("\n".join(f"? [OMOD] {o.get('name')} ({o.get('form_id')})" for o in omods))
+                self.table.setItem(row, 3, items_cell)
+            else:
+                sels = self._get_injectable_records(parsed)
+                summary, item_tip = self._format_items_summary(sels)
+                items_cell = QTableWidgetItem(summary)
+                items_cell.setToolTip(item_tip)
+                self.table.setItem(row, 3, items_cell)
 
         target_names = [self._label_map.get(t, t) for t in sug["targets"]]
         labels = ", ".join(target_names) if target_names else "(None selected)"
@@ -830,6 +839,42 @@ class BatchPreviewDialog(QDialog):
                     self._skipped_mods.append((mod_name, fname, "Quest/dungeon mod with custom NPCs"))
                     continue
 
+                if parsed.get("is_attachment_addon"):
+                    from .robco_engine import build_omod_slot_targets
+                    omod_map, omod_labels = build_omod_slot_targets(parsed, self.organizer.resolvePath)
+                    if omod_map:
+                        self._label_map.update(omod_labels)
+                        sug = {
+                            "targets": sorted(omod_map.keys()),
+                            "omod_map": omod_map,
+                            "confidence": "high",
+                            "tier": "omod",
+                            "level": 1,
+                            "chance": 0,
+                            "weight": 1,
+                        }
+                        row = self.table.rowCount()
+                        self.table.insertRow(row)
+                        chk = QTableWidgetItem()
+                        chk.setData(QtUserRole, (mod_name, fname, parsed, sug))
+                        self.table.setItem(row, 0, chk)
+
+                        cb_wrap = QWidget()
+                        cb_lay = QHBoxLayout(cb_wrap)
+                        cb_lay.setContentsMargins(0, 0, 0, 0)
+                        cb_lay.setAlignment(Qt.AlignmentFlag.AlignCenter if hasattr(Qt, "AlignmentFlag") else Qt.AlignCenter)
+                        cb = QCheckBox()
+                        cb.setChecked(True)
+                        cb_lay.addWidget(cb)
+                        self.table.setCellWidget(row, 0, cb_wrap)
+
+                        self.table.setItem(row, 1, QTableWidgetItem(f"{mod_name} [OMOD Addon]"))
+                        self.table.setItem(row, 2, QTableWidgetItem(fname))
+                        self._refresh_row_display(row, sug)
+                    else:
+                        self._skipped_mods.append((mod_name, fname, "Attachment addon (base weapon uses hardcoded OBTS; requires Part 2 OBTS patcher)"))
+                    continue
+
                 has_new_gear = bool(parsed.get("weap_families") or parsed.get("armo_list"))
                 has_weap_or_armo = bool(parsed.get("root_lvli") or has_new_gear)
                 has_npcs = bool(parsed.get("npc_list"))
@@ -902,6 +947,22 @@ class BatchPreviewDialog(QDialog):
             mod_name, fname, parsed, sug = chk.data(QtUserRole)
             if not cb or not cb.isChecked():
                 unchecked_skipped.append((mod_name, fname, "Unchecked in preview"))
+                continue
+
+            if sug.get("omod_map"):
+                from .robco_engine import write_omod_ini
+                if write_omod_ini(fname, mod_name, sug["omod_map"], ini_dir):
+                    written += 1
+                    stem = os.path.splitext(fname)[0]
+                    injected_items = "; ".join(
+                        f"[OMOD] {o.get('name') or o.get('edid') or o.get('form_id')} ({o.get('form_id')})"
+                        for o in parsed.get("omod_list", [])
+                    )
+                    target_labels = " | ".join(self._label_map.get(t, t) for t in sug["targets"])
+                    audit_rows.append([
+                        f"{stem}_RobCo_OMOD.ini", mod_name, fname,
+                        injected_items, target_labels, 1, 0, 1,
+                    ])
                 continue
 
             selections = self._get_injectable_records(parsed)
