@@ -1,0 +1,7 @@
+﻿__pycache__/
+*.pyc
+tests/
+ignored_mods.json
+batch_blacklist.json
+shield_whitelist.json
+wizard_prefs.json

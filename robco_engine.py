@@ -1,0 +1,522 @@
+"""RobCo Leveled List engine: heuristics, INI generation, and ESL bundling."""
+
+import json
+import os
+import re
+from typing import Dict, List, Tuple
+
+import struct
+
+def append_sublist_to_esl(esl_path, rec_type_str, edid_name):
+    """Creates or appends an LVLI or LVLN record (LVLF=0x01) in RobCo_AutoSubLists.esl.
+
+    If a record with the same EDID already exists in the ESL, returns its existing FormID.
+    """
+    rec_tag = rec_type_str.encode("ascii")
+    edid_bytes = edid_name.encode("utf-8") + b"\x00"
+    edid_sub = b"EDID" + struct.pack("<H", len(edid_bytes)) + edid_bytes
+    lvld_sub = b"LVLD\x01\x00\x00"
+    lvlf_sub = b"LVLF\x01\x00\x01"
+    sub_blob = edid_sub + lvld_sub + lvlf_sub
+
+    if not os.path.isfile(esl_path):
+        hedr = b"HEDR\x0C\x00" + struct.pack("<fII", 1.0, 1, 0x000801)
+        cnam = b"CNAM\x0E\x00RobCoWizard\x00\x00\x00"
+        mast = b"MAST\x0D\x00Fallout4.esm\x00" + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        tes4_body = hedr + cnam + mast
+        tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(tes4_body), 0x00000201, 0, 0, 131) + b"\x00\x00"
+        next_id = 0x000800
+        grup_hdr = b"GRUP" + struct.pack("<I", 24 + 24 + len(sub_blob)) + rec_tag + struct.pack("<III", 0, 0, 0)
+        rec_hdr = rec_tag + struct.pack("<IIIIH", len(sub_blob), 0, next_id, 0, 131) + b"\x00\x00"
+        os.makedirs(os.path.dirname(esl_path), exist_ok=True)
+        with open(esl_path, "wb") as f:
+            f.write(tes4_hdr + tes4_body + grup_hdr + rec_hdr + sub_blob)
+        return f"0x{next_id:06X}"
+
+    with open(esl_path, "rb") as f:
+        blob = bytearray(f.read())
+
+    highest_id = 0x000800
+    pos = 24 + struct.unpack("<I", blob[4:8])[0]
+    while pos + 24 <= len(blob):
+        tag = blob[pos:pos + 4]
+        sz = struct.unpack("<I", blob[pos + 4:pos + 8])[0]
+        if tag == b"GRUP":
+            pos += 24
+        else:
+            fid = struct.unpack("<I", blob[pos + 12:pos + 16])[0] & 0x000FFF
+            rec_body = blob[pos + 24:pos + 24 + sz]
+            if len(rec_body) >= 6 and rec_body[0:4] == b"EDID":
+                edid_len = struct.unpack("<H", rec_body[4:6])[0]
+                existing_edid = rec_body[6:6 + edid_len].rstrip(b"\x00").decode("utf-8", errors="ignore")
+                if existing_edid == edid_name:
+                    return f"0x{fid:06X}"
+            if fid > highest_id:
+                highest_id = fid
+            pos += 24 + sz
+
+    next_id = highest_id + 1
+    rec_count = struct.unpack("<I", blob[34:38])[0] + 1
+    blob[34:38] = struct.pack("<I", rec_count)
+    blob[38:42] = struct.pack("<I", next_id + 1)
+
+    grup_hdr = b"GRUP" + struct.pack("<I", 24 + 24 + len(sub_blob)) + rec_tag + struct.pack("<III", 0, 0, 0)
+    rec_hdr = rec_tag + struct.pack("<IIIIH", len(sub_blob), 0, next_id, 0, 131) + b"\x00\x00"
+    blob.extend(grup_hdr + rec_hdr + sub_blob)
+
+    with open(esl_path, "wb") as f:
+        f.write(blob)
+    return f"0x{next_id:06X}"
+
+
+WEAPON_LISTS = [
+    # Raiders (Hierarchy: Grunts -> Auto/Rifle -> Bosses)
+    ("Raiders -> 1. Grunts & Scavengers (LLI_Raider_Weapons)", "Fallout4.esm|0x0005E8E5"),
+    ("Raiders -> 2. Veterans & Auto (LLI_Raider_Auto)", "Fallout4.esm|0x0023D8CA"),
+    ("Raiders -> 3. Bosses & Heavies (LLI_Raider_Weapons_Boss)", "Fallout4.esm|0x0005F42F"),
+    # Gunners (Hierarchy: Semi-Auto -> Auto -> Snipers -> Bosses)
+    ("Gunners -> 1. Troopers Semi-Auto (LLI_Gunner_SemiAuto)", "Fallout4.esm|0x000FD39E"),
+    ("Gunners -> 2. Assault Auto (LLI_Gunner_Auto)", "Fallout4.esm|0x000FD39F"),
+    ("Gunners -> 3. Marksmen & Snipers (LLI_Gunner_Sniper)", "Fallout4.esm|0x00232869"),
+    ("Gunners -> 4. Commanders & Bosses (LLI_Gunner_SemiAuto_Boss)", "Fallout4.esm|0x00247551"),
+    # Brotherhood of Steel
+    ("Brotherhood -> 1. Initiates & Patrols (LLI_BoS_Weapons)", "Fallout4.esm|0x0007655E"),
+    ("Brotherhood -> 2. Knights & Paladins (LLI_BoS_Heavy)", "Fallout4.esm|0x0007655F"),
+    # Minutemen
+    ("Minutemen -> 1. Militia Semi-Auto (LL_Minutemen_Weapons_NonAuto)", "Fallout4.esm|0x001BF0B8"),
+    ("Minutemen -> 2. Patrols Auto (LL_Minutemen_Weapons_Auto)", "Fallout4.esm|0x001BF0B9"),
+    # Railroad
+    ("Railroad -> Agents & Heavies (LLI_RRAgent_Weapons)", "Fallout4.esm|0x00183303"),
+    # Institute
+    ("Institute -> 1. Synths Standard (LL_InstituteLaserGun)", "Fallout4.esm|0x001A7777"),
+    ("Institute -> 2. Coursers & Bosses (LL_InstituteLaserGun_Boss)", "Fallout4.esm|0x001A777B"),
+    # Other Factions, Vendors & Loot
+    ("Triggermen -> Mobsters & Enforcers", "Fallout4.esm|0x0002B483"),
+    ("Super Mutants -> 1. Skirmishers & Brutes", "Fallout4.esm|0x0004691D"),
+    ("Super Mutants -> 2. Heavies (Minigun / Missile)", "Fallout4.esm|0x00109248"),
+    ("Vendors -> 1. General Weapon Stores (LL_Vendor_Weapon_GunGeneralStore)", "Fallout4.esm|0x002049DD"),
+    ("Vendors -> 2. Specialty Gun Shops (Arturo / KL-E-O)", "Fallout4.esm|0x0008531F"),
+    ("Vendors -> 3. Brotherhood Quartermaster (Teagan)", "Fallout4.esm|0x002049DB"),
+    ("Vendors -> 4. Melee & Blades (LL_Vendor_Weapon_Melee)", "Fallout4.esm|0x00153515"),
+    ("Dungeon Loot -> Boss Trunks & Weapon Drops", "Fallout4.esm|0x000673AF"),
+    ("Legendaries -> Legendary Weapon Pool", "Fallout4.esm|0x001CCDA9"),
+]
+
+ARMOR_LISTS = [
+    # Raiders
+    ("Raiders -> 1. Grunts & Scavengers", "Fallout4.esm|0x0007655A"),
+    ("Raiders -> 2. Veterans & Bosses", "Fallout4.esm|0x0007655B"),
+    # Gunners
+    ("Gunners -> 1. Conscripts & Troopers", "Fallout4.esm|0x00058309"),
+    ("Gunners -> 2. Officers & Commanders", "Fallout4.esm|0x0005830C"),
+    # Brotherhood of Steel
+    ("Brotherhood -> 1. Field Scribes & Lancers", "Fallout4.esm|0x0007655D"),
+    ("Brotherhood -> 2. Soldiers & Recon Officers", "Fallout4.esm|0x00076563"),
+    # Minutemen
+    ("Minutemen -> 1. Militia Outfits (LL_Minutemen_Outfit)", "Fallout4.esm|0x000B23D2"),
+    ("Minutemen -> 2. Armored Gear (LL_Minutemen_Armored)", "Fallout4.esm|0x001BF0CC"),
+    # Railroad
+    ("Railroad -> 1. Agent Armored Coats (LLI_Armor_RRAgent)", "Fallout4.esm|0x0018330B"),
+    ("Railroad -> 2. Undercover Clothing (LL_Railroad_ClothingArmor)", "Fallout4.esm|0x0020DE46"),
+    # Institute
+    ("Institute -> 1. Synth Armor Sets (LL_Armor_Synth_Set_Full)", "Fallout4.esm|0x0022E2FB"),
+    ("Institute -> 2. Lab Coats & Uniforms (LL_Clothes_Institute)", "Fallout4.esm|0x001A6B10"),
+    # Other Factions, Power Armor, Vendors & Loot
+    ("Children of Atom -> Robes & Gear (LLI_ChildrenOfAtom_Clothes)", "Fallout4.esm|0x0022CDF1"),
+    ("Diamond City -> Security Gear", "Fallout4.esm|0x0002332F"),
+    ("Triggermen -> Suits & Fedoras", "Fallout4.esm|0x000EBE8E"),
+    ("Power Armor -> 1. World & Boss Frames (LL_Armor_Power_Set)", "Fallout4.esm|0x0018AE53"),
+    ("Power Armor -> 2. Power Armor Vendors (Atom Cats / BoS)", "Fallout4.esm|0x00137824"),
+    ("Wastelanders -> Settlers & Minutemen", "Fallout4.esm|0x000330F4"),
+    ("Vendors -> 1. General Armor & Clothing Stores", "Fallout4.esm|0x0007645A"),
+    ("Vendors -> 2. Armor Merchants (LL_Vendor_Armor)", "Fallout4.esm|0x00240100"),
+    ("Dungeon Loot -> Boss Trunks", "Fallout4.esm|0x0007645B"),
+    ("Legendaries -> Legendary Armor Pool", "Fallout4.esm|0x001CCDAA"),
+]
+
+CREATURE_LISTS: List[Tuple[str, str]] = [
+    ("Commonwealth -> Wildlife (Radstag / Yao Guai)", "Fallout4.esm|0x0002059B"),
+    ("Commonwealth -> Deathclaw Encounters (LCharDeathclaw)", "Fallout4.esm|0x0007533D"),
+    ("Super Mutants -> Ranged & Assault Encounters", "Fallout4.esm|0x001478BC"),
+    ("Super Mutants -> Behemoths (LCharSMBehemoth)", "Fallout4.esm|0x0012B97D"),
+    ("Urban / Ruins -> Feral Ghoul Packs", "Fallout4.esm|0x0002059C"),
+    ("Coastal / Swamp -> Mirelurk Spawns", "Fallout4.esm|0x0002059D"),
+    ("Glowing Sea -> Apex Predators", "Fallout4.esm|0x000A0EE7"),
+    ("Wasteland -> Insects & Radscorpions", "Fallout4.esm|0x0002059A"),
+    ("Robots -> Sentry Bots (LCharSentryBot)", "Fallout4.esm|0x0012BC12"),
+    ("Robots -> Assaultrons (LCharAssaultron)", "Fallout4.esm|0x00121D51"),
+]
+
+_FID_TO_LABEL: Dict[str, str] = {
+    fid: lbl for lbl, fid in WEAPON_LISTS + ARMOR_LISTS + CREATURE_LISTS
+}
+
+_WEAPON_FIDS   = {fid for _, fid in WEAPON_LISTS}
+_ARMOR_FIDS    = {fid for _, fid in ARMOR_LISTS}
+
+_TIERS = {
+    "early": {"tier": "early", "level": 1,  "chance": 0},
+    "mid":   {"tier": "mid",   "level": 15, "chance": 25},
+    "late":  {"tier": "late",  "level": 30, "chance": 50},
+}
+
+
+def count_all_ll_entries(mods_dir: str) -> Dict[str, int]:
+    """Scan all RobCo Patcher INI files and tally entries per target list in O(1) per line."""
+    counts: Dict[str, int] = {}
+    if not os.path.isdir(mods_dir):
+        return counts
+
+    low_to_canon = {fid.lower(): fid for fid in _FID_TO_LABEL}
+    pattern = re.compile(r"filterByLLs=([^:|]+\.(?:esm|esp|esl)\|0x[0-9A-Fa-f]+):addToLLs=", re.IGNORECASE)
+    for mod_folder in os.listdir(mods_dir):
+        ll_dir = os.path.join(mods_dir, mod_folder, "F4SE", "Plugins", "RobCo_Patcher", "leveledList")
+        if not os.path.isdir(ll_dir):
+            continue
+        for fname in os.listdir(ll_dir):
+            if not fname.lower().endswith(".ini"):
+                continue
+            try:
+                with open(os.path.join(ll_dir, fname), "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        s = line.strip()
+                        if not s or s.startswith(";"):
+                            continue
+                        m = pattern.search(s)
+                        if m:
+                            canon = low_to_canon.get(m.group(1).lower())
+                            if canon:
+                                counts[canon] = counts.get(canon, 0) + 1
+            except Exception:
+                pass
+    return counts
+
+
+def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
+    """Heuristically suggest matching faction/rank vanilla leveled lists."""
+    targets: List[str] = []
+    matched_specific = False
+
+    def _add_if_open(fid: str):
+        if fid not in targets and counts.get(fid, 0) < 245:
+            targets.append(fid)
+
+    valid_target_ids = {f for _, f in (WEAPON_LISTS + ARMOR_LISTS + CREATURE_LISTS)}
+    for ov_fid in parsed.get("vanilla_ll_overrides", []):
+        if ov_fid in valid_target_ids:
+            _add_if_open(ov_fid)
+            matched_specific = True
+
+    plugin_low = parsed.get("plugin_name", "").lower()
+    weap_recs = [r for r in parsed.get("root_lvli", []) if r.get("category") == "WEAP"] + parsed.get("weap_families", [])
+    armo_recs = [r for r in parsed.get("root_lvli", []) if r.get("category") == "ARMO"] + parsed.get("armo_list", [])
+    npc_recs  = parsed.get("npc_list", [])
+
+    for r in weap_recs:
+        raw_nm = r.get("name", "").lower()
+        extra_ctx = f" {plugin_low}" if any(g in raw_nm for g in ("default", "simple", "standard", "random", "epic")) else ""
+        txt = f"{raw_nm} {r.get('edid', '').lower()}{extra_ctx}"
+
+        # 1. Explicit faction-configured weapon variants (checked first)
+        if any(k in txt for k in ("bos", "brotherhood", "paladin", "knight", "enclave")):
+            _add_if_open("Fallout4.esm|0x0007655E")
+            _add_if_open("Fallout4.esm|0x0007655F")
+            matched_specific = True
+        elif any(k in txt for k in ("gunner", "merc")):
+            _add_if_open("Fallout4.esm|0x000FD39E")
+            _add_if_open("Fallout4.esm|0x000FD39F")
+            matched_specific = True
+        elif any(k in txt for k in ("musket", "minutemen", "minuteman", "crank", "militia")):
+            _add_if_open("Fallout4.esm|0x001BF0B8")
+            matched_specific = True
+        elif any(k in txt for k in ("railroad", "railway", "deliverer", "tinker")):
+            _add_if_open("Fallout4.esm|0x00183303")
+            matched_specific = True
+        elif any(k in txt for k in ("institute", "synth", "courser")):
+            _add_if_open("Fallout4.esm|0x001A7777")
+            matched_specific = True
+        elif any(k in txt for k in ("supermutant", "super_mutant", "mutant")):
+            _add_if_open("Fallout4.esm|0x0004691D")
+            matched_specific = True
+        elif any(k in txt for k in ("triggerman", "mobster", "mafia")):
+            _add_if_open("Fallout4.esm|0x0002B483")
+            matched_specific = True
+        # 2. General weapon-type heuristics
+        elif any(k in txt for k in ("sword", "blade", "knife", "machete", "sledge", "hammer", "katana", "spear", "melee", "fist", "knuckle", "hatchet", "pickaxe", "tonfa")) or re.search(r"\b(axe|bat)\b", txt):
+            _add_if_open("Fallout4.esm|0x00153515")
+            _add_if_open("Fallout4.esm|0x0005E8E5")
+            matched_specific = True
+        elif any(k in txt for k in ("raider", "pipe", "pistol", "revolver", "10mm", ".44", "9mm", "smg", "submachine", ".45")):
+            _add_if_open("Fallout4.esm|0x0005E8E5")
+            _add_if_open("Fallout4.esm|0x0002B483")
+            matched_specific = True
+        elif any(k in txt for k in ("sniper", "marksman", "hunting", ".50", "amr", "anti")):
+            _add_if_open("Fallout4.esm|0x00232869")
+            matched_specific = True
+        elif any(k in txt for k in ("laser", "plasma", "gatling", "tesla")):
+            _add_if_open("Fallout4.esm|0x0007655E")
+            _add_if_open("Fallout4.esm|0x0007655F")
+            matched_specific = True
+        elif any(k in txt for k in ("minigun", "missile", "fatman", "launcher", "heavy")):
+            _add_if_open("Fallout4.esm|0x0005F42F")
+            _add_if_open("Fallout4.esm|0x00109248")
+            matched_specific = True
+        elif any(k in txt for k in ("rifle", "shotgun", "assault", "carbine", "ak", "m4", "m16", "service")):
+            _add_if_open("Fallout4.esm|0x0023D8CA")
+            _add_if_open("Fallout4.esm|0x000FD39F")
+            matched_specific = True
+    if weap_recs and not any(t in _WEAPON_FIDS for t in targets):
+        _add_if_open("Fallout4.esm|0x000FD39E")
+        _add_if_open("Fallout4.esm|0x002049DD")
+
+    _PA_KEYWORDS = (
+        "power armor", "powerarmor", "power_armor", "_power_", "ll_armor_power",
+        "t-45", "t45", "t-51", "t51", "t-60", "t60", "t-65", "t65",
+        "x-01", "x01", "x-02", "x02", "hellcat", "excavator", "ultracite", "equalizer",
+    )
+    has_power_armor = any(k in plugin_low for k in _PA_KEYWORDS)
+
+    for r in armo_recs:
+        txt = f"{r.get('name', '')} {r.get('edid', '')} {plugin_low}".lower()
+        is_pa = any(k in txt for k in _PA_KEYWORDS)
+        if is_pa:
+            has_power_armor = True
+            _add_if_open("Fallout4.esm|0x0018AE53")
+            _add_if_open("Fallout4.esm|0x00137824")
+            matched_specific = True
+            continue
+
+        if any(k in txt for k in ("raider", "scrap", "cage", "harness", "bandit", "overboss")):
+            _add_if_open("Fallout4.esm|0x0007655A")
+            matched_specific = True
+        elif any(k in txt for k in ("bos", "brotherhood", "scribe", "lancer", "recon", "paladin", "knight", "sentinel", "enclave")):
+            _add_if_open("Fallout4.esm|0x0007655D")
+            matched_specific = True
+        elif any(k in txt for k in ("combat", "tactical", "merc", "gunner", "military", "rig")):
+            _add_if_open("Fallout4.esm|0x00058309")
+            matched_specific = True
+        elif any(k in txt for k in ("minutemen", "minuteman", "militia", "colonial")):
+            _add_if_open("Fallout4.esm|0x000B23D2")
+            _add_if_open("Fallout4.esm|0x001BF0CC")
+            matched_specific = True
+        elif any(k in txt for k in ("railroad", "agent")):
+            _add_if_open("Fallout4.esm|0x0018330B")
+            matched_specific = True
+        elif any(k in txt for k in ("institute", "synth", "courser")):
+            _add_if_open("Fallout4.esm|0x0022E2FB")
+            matched_specific = True
+        elif any(k in txt for k in ("children of atom", "atom", "zealot")):
+            _add_if_open("Fallout4.esm|0x0022CDF1")
+            matched_specific = True
+        elif any(k in txt for k in ("vault", "settler", "casual", "coat", "jacket", "wasteland")):
+            _add_if_open("Fallout4.esm|0x000330F4")
+            matched_specific = True
+
+    if armo_recs and not any(t in _ARMOR_FIDS for t in targets):
+        if has_power_armor:
+            _add_if_open("Fallout4.esm|0x0018AE53")
+            _add_if_open("Fallout4.esm|0x00137824")
+        else:
+            _add_if_open("Fallout4.esm|0x000330F4")
+            _add_if_open("Fallout4.esm|0x0007645A")
+
+    for r in npc_recs:
+        txt = r.get("name", "").lower()
+        if any(k in txt for k in ("behemoth",)):
+            _add_if_open("Fallout4.esm|0x0012B97D")
+            matched_specific = True
+        elif any(k in txt for k in ("supermutant", "super mutant", "mutant", "centaur")):
+            _add_if_open("Fallout4.esm|0x001478BC")
+            matched_specific = True
+        elif any(k in txt for k in ("deathclaw",)):
+            _add_if_open("Fallout4.esm|0x0007533D")
+            matched_specific = True
+        elif any(k in txt for k in ("sentry",)):
+            _add_if_open("Fallout4.esm|0x0012BC12")
+            matched_specific = True
+        elif any(k in txt for k in ("assaultron",)):
+            _add_if_open("Fallout4.esm|0x00121D51")
+            matched_specific = True
+        elif any(k in txt for k in ("ghoul", "feral", "zombie")):
+            _add_if_open("Fallout4.esm|0x0002059C")
+            matched_specific = True
+        elif any(k in txt for k in ("mirelurk", "crab", "lurk", "swamp")):
+            _add_if_open("Fallout4.esm|0x0002059D")
+            matched_specific = True
+        elif any(k in txt for k in ("radscorpion", "glowing")):
+            _add_if_open("Fallout4.esm|0x000A0EE7")
+            matched_specific = True
+        elif any(k in txt for k in ("insect", "roach", "fly", "stingwing", "bloodbug", "mantis")):
+            _add_if_open("Fallout4.esm|0x0002059A")
+            matched_specific = True
+        elif any(k in txt for k in ("radstag", "yao guai", "yaoguai", "brahmin", "dog", "hound", "molerat", "mole rat", "gecko", "creature", "animal", "wildlife")):
+            _add_if_open("Fallout4.esm|0x0002059B")
+            matched_specific = True
+
+    if matched_specific or parsed.get("root_lvli"):
+        confidence = "high"
+    elif targets:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    lvlo_levels = parsed.get("lvlo_levels", [])
+    if lvlo_levels:
+        detected_lvl = min(lvlo_levels)
+        tier_key = "late" if detected_lvl >= 25 else ("mid" if detected_lvl >= 12 else "early")
+        tier_def = {"tier": "custom", "level": detected_lvl, "chance": _TIERS[tier_key]["chance"]}
+    else:
+        all_names = " ".join(
+            f"{r.get('name', '')} {r.get('edid', '')}" for r in (weap_recs + armo_recs + npc_recs)
+        ).lower() + " " + plugin_low
+        if any(kw in all_names for kw in ("endgame", "gauss", "anti-materiel", "anti materiel", "20mm", "fatman", "fat man", "whalegun")):
+            tier_key = "late"
+        elif any(kw in all_names for kw in ("assault", "combat", "laser", "plasma", "rifle", "shotgun", "sniper", "heavy", "power")):
+            tier_key = "mid"
+        else:
+            tier_key = "early"
+        tier_def = _TIERS[tier_key]
+
+    return {
+        "targets":    targets,
+        "confidence": confidence,
+        "tier":       tier_def["tier"],
+        "level":      tier_def["level"],
+        "chance":     tier_def["chance"],
+    }
+
+
+def _expand_records(records: list) -> list:
+    concrete = []
+    for rec in records:
+        if rec.get("type") == "WEAP_FAMILY" and rec.get("members"):
+            non_unique = [m for m in rec["members"] if not m.get("is_unique")]
+            concrete.extend(non_unique if non_unique else rec["members"])
+        else:
+            concrete.append(rec)
+    return concrete
+
+
+_FACTION_BUCKETS = [
+    ("Gunners",      ("gunner", "merc"),                                                        {"Fallout4.esm|0x000FD39E", "Fallout4.esm|0x000FD39F", "Fallout4.esm|0x00232869", "Fallout4.esm|0x00247551", "Fallout4.esm|0x00058309", "Fallout4.esm|0x0005830C"}),
+    ("Brotherhood",  ("bos", "brotherhood", "paladin", "knight", "scribe", "lancer", "sentinel"), {"Fallout4.esm|0x0007655E", "Fallout4.esm|0x0007655F", "Fallout4.esm|0x0007655D", "Fallout4.esm|0x0018AE53", "Fallout4.esm|0x00076563"}),
+    ("Minutemen",    ("minutemen", "minuteman", "militia", "musket", "crank"),                  {"Fallout4.esm|0x001BF0B8", "Fallout4.esm|0x001BF0B9", "Fallout4.esm|0x000B23D2", "Fallout4.esm|0x001BF0CC"}),
+    ("Railroad",     ("railroad", "railway", "deliverer", "tinker", "agent"),                   {"Fallout4.esm|0x00183303", "Fallout4.esm|0x0018330B", "Fallout4.esm|0x0020DE46"}),
+    ("Institute",    ("institute", "synth", "courser"),                                         {"Fallout4.esm|0x001A7777", "Fallout4.esm|0x001A777B", "Fallout4.esm|0x0022E2FB", "Fallout4.esm|0x001A6B10"}),
+    ("Raiders",      ("raider", "scrap", "cage", "harness", "bandit", "overboss"),              {"Fallout4.esm|0x0005E8E5", "Fallout4.esm|0x0023D8CA", "Fallout4.esm|0x0005F42F", "Fallout4.esm|0x0007655A", "Fallout4.esm|0x0007655B"}),
+    ("SuperMutants", ("supermutant", "super_mutant", "mutant"),                                 {"Fallout4.esm|0x0004691D", "Fallout4.esm|0x00109248"}),
+    ("Triggermen",   ("triggerman", "mobster", "mafia"),                                        {"Fallout4.esm|0x0002B483", "Fallout4.esm|0x000EBE8E"}),
+    ("ChildrenOfAtom", ("children of atom", "atom", "radium", "gamma", "zealot"),              {"Fallout4.esm|0x0022CDF1"}),
+]
+
+
+def _classify_item_faction(rec: dict) -> str:
+    txt = f"{rec.get('name', '')} {rec.get('edid', '')}".lower()
+    for fac_name, kws, _ in _FACTION_BUCKETS:
+        if any(k in txt for k in kws):
+            return fac_name
+    return "General"
+
+
+def _filter_targets_for_faction(target_list: List[str], fac_name: str) -> List[str]:
+    if fac_name == "General":
+        return target_list
+    fac_fids = next((fids for name, _, fids in _FACTION_BUCKETS if name == fac_name), set())
+    matched = [t for t in target_list if t in fac_fids or fac_name.lower() in t.lower()]
+    return matched if matched else target_list
+
+
+def write_robco_ini(
+    ini_dir: str,
+    plugin_fname: str,
+    mod_name: str,
+    selections: dict,
+    targets: dict,
+    level,
+    chance: int = 0,
+    bundle: bool = True,
+    split_factions: bool = False,
+) -> bool:
+    """Write a valid RobCo Patcher leveledList INI file (supports multi-tier, weights & faction splitting)."""
+    try:
+        os.makedirs(ini_dir, exist_ok=True)
+        plugin_stem = os.path.splitext(plugin_fname)[0]
+        ini_path = os.path.join(ini_dir, f"{plugin_stem}_RobCo_LL.ini")
+
+        out_mod_root = os.path.abspath(os.path.join(ini_dir, "..", "..", "..", ".."))
+        esl_name = "RobCo_AutoSubLists.esl"
+        esl_path = os.path.join(out_mod_root, esl_name)
+
+        raw_tiers = level if isinstance(level, list) else [(int(level), int(chance), 1)]
+        tiers = [(t[0], t[1], t[2] if len(t) > 2 else 1) for t in raw_tiers]
+
+        lines: List[str] = [
+            f"; RobCo Patcher leveled list patch for {mod_name} ({plugin_fname})",
+            "; Generated by RobCo Leveled List Wizard",
+            "",
+        ]
+
+        wrote_any = False
+        for category, raw_records in selections.items():
+            cat_targets = targets.get(category, [])
+            if not raw_records or not cat_targets:
+                continue
+
+            records = _expand_records(raw_records)
+            if not records:
+                continue
+
+            if split_factions and category in ("WEAP", "ARMO"):
+                buckets: Dict[str, list] = {}
+                for rec in records:
+                    fac = _classify_item_faction(rec)
+                    buckets.setdefault(fac, []).append(rec)
+            else:
+                buckets = {"General": records}
+
+            for fac_name, fac_records in buckets.items():
+                fac_targets = _filter_targets_for_faction(cat_targets, fac_name)
+                if not fac_targets:
+                    continue
+
+                wrote_any = True
+                suffix = f"_{fac_name}" if fac_name != "General" else ""
+                lines.append(f"; --- {category} ({fac_name}) ---")
+                is_single_lvli = (len(fac_records) == 1 and fac_records[0].get("type") == "LVLI")
+
+                if bundle and len(fac_records) > 1 and not is_single_lvli:
+                    edid_name = f"RobCo_{plugin_stem}_{category}{suffix}"
+                    rec_type = "LVLN" if category == "NPC_" else "LVLI"
+                    sub_fid = append_sublist_to_esl(esl_path, rec_type, edid_name)
+
+                    for rec in fac_records:
+                        lines.append(
+                            f"filterByLLs={esl_name}|{sub_fid}:addToLLs={plugin_fname}|{rec['form_id']}~1~1~0"
+                        )
+                    for lvl, chg, weight in tiers:
+                        for _ in range(weight):
+                            for target_fid in fac_targets:
+                                lines.append(
+                                    f"filterByLLs={target_fid}:addToLLs={esl_name}|{sub_fid}~{lvl}~1~{chg}"
+                                )
+                else:
+                    for lvl, chg, weight in tiers:
+                        for _ in range(weight):
+                            for rec in fac_records:
+                                for target_fid in fac_targets:
+                                    lines.append(
+                                        f"filterByLLs={target_fid}:addToLLs={plugin_fname}|{rec['form_id']}~{lvl}~1~{chg}"
+                                    )
+                lines.append("")
+
+        if not wrote_any:
+            return False
+
+        with open(ini_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        return True
+
+    except Exception as exc:
+        print(f"[RobCo] write_robco_ini error: {exc}")
+        return False
+
