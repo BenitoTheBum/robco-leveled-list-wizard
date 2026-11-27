@@ -353,6 +353,16 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
             _add_if_open("Fallout4.esm|0x0002059B")
             matched_specific = True
 
+    allowed_fids = set()
+    if weap_recs:
+        allowed_fids |= _WEAPON_FIDS
+    if armo_recs:
+        allowed_fids |= _ARMOR_FIDS
+    if npc_recs and not weap_recs and not armo_recs:
+        allowed_fids |= {fid for _, fid in CREATURE_LISTS}
+    if allowed_fids:
+        targets = [t for t in targets if t in allowed_fids]
+
     if matched_specific or parsed.get("root_lvli"):
         confidence = "high"
     elif targets:
