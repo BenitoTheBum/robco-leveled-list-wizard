@@ -867,7 +867,7 @@ def inject_obts_templates(esl_path: str, addon_parsed: dict, addon_path: str,
     weap_blob = b"".join(existing_weaps.values())
     weap_grup = b"GRUP" + struct.pack("<I", 24 + len(weap_blob)) + b"WEAP" + struct.pack("<III", 0, 0, 0) + weap_blob
     tes4_subs = bytearray(b"HEDR\x0C\x00" + struct.pack("<fII", 1.0, len(existing_weaps), 0x00000800))
-    tes4_subs.extend(b"CNAM\x0D\x00RobCoWizard\x00")
+    tes4_subs.extend(b"CNAM\x0C\x00RobCoWizard\x00")
     for dm in existing_masters:
         mb = dm.encode("utf-8") + b"\x00"
         tes4_subs.extend(b"MAST" + struct.pack("<H", len(mb)) + mb + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00")
