@@ -859,7 +859,7 @@ class BatchPreviewDialog(QDialog):
                             t_list = []
                             for wt in obts_targets:
                                 k = f"{wt['master_plugin']}|{wt['weap_fid']}"
-                                self._label_map[k] = f"[{os.path.splitext(wt['master_plugin'])[0]}] {wt['weap_edid'] or wt['weap_fid']} (OBTS)"
+                                self._label_map[k] = f"[{os.path.splitext(wt['master_plugin'])}] {wt['weap_edid'] or wt['weap_fid']} (OBTS)"
                                 t_list.append(k)
                             tag_lbl = "[OBTS Addon]"
                         sug = {
@@ -973,7 +973,7 @@ class BatchPreviewDialog(QDialog):
                 from .robco_engine import write_omod_ini
                 if write_omod_ini(fname, mod_name, sug["omod_map"], ini_dir):
                     written += 1
-                    stem = os.path.splitext(fname)[0]
+                    stem = os.path.splitext(fname)
                     injected_items = "; ".join(
                         f"[OMOD] {o.get('name') or o.get('edid') or o.get('form_id')} ({o.get('form_id')})"
                         for o in parsed.get("omod_list", [])
