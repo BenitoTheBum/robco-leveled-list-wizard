@@ -920,3 +920,125 @@ def inject_obts_templates(
     with open(esl_path, "wb") as f:
         f.write(final_blob)
     return injected_templates
+
+
+def prune_missing_masters_from_esl(esl_path: str, active_plugins: set) -> int:
+    """Remove missing/disabled masters and orphaned OBTS WEAP records from RobCo_AutoSubLists.esl."""
+    if not os.path.isfile(esl_path):
+        return 0
+    active_low = {p.lower() for p in active_plugins} | {"fallout4.esm"}
+
+    with open(esl_path, "rb") as f:
+        blob = bytes(f.read())
+    if len(blob) < 24 or blob[0:4] != b"TES4":
+        return 0
+
+    tes4_sz, = struct.unpack("<I", blob[4:8])
+    tes4_body = blob[24:24 + tes4_sz]
+    masters: List[str] = []
+    other_subs = bytearray()
+    p = 0
+    while p + 6 <= len(tes4_body):
+        st = tes4_body[p:p+4]
+        ssz, = struct.unpack("<H", tes4_body[p+4:p+6])
+        ch = tes4_body[p+6:p+6+ssz]
+        p += 6 + ssz
+        if st == b"MAST":
+            masters.append(ch.rstrip(b"\x00").decode("utf-8", "ignore"))
+        elif st == b"DATA" and masters:
+            continue
+        else:
+            other_subs.extend(st + struct.pack("<H", ssz) + ch)
+
+    if not any(m.lower() not in active_low for m in masters):
+        return 0
+
+    kept_masters = [m for m in masters if m.lower() in active_low]
+    if not kept_masters:
+        kept_masters = ["Fallout4.esm"]
+    old_to_new = {
+        i: kept_masters.index(m)
+        for i, m in enumerate(masters) if m in kept_masters
+    }
+
+    kept_grups = bytearray()
+    total_recs = 0
+    pruned_weaps = 0
+    off = 24 + tes4_sz
+    while off + 24 <= len(blob):
+        rt = blob[off:off+4]
+        rsz, = struct.unpack("<I", blob[off+4:off+8])
+        if rt != b"GRUP":
+            off += 24 + rsz
+            continue
+        g_label = blob[off+8:off+12]
+        g_end = min(off + rsz, len(blob))
+        rpos = off + 24
+        off = g_end
+        if g_label != b"WEAP":
+            kept_grups.extend(blob[rpos - 24:g_end])
+            scan = rpos
+            while scan + 24 <= g_end:
+                sub_sz, = struct.unpack("<I", blob[scan+4:scan+8])
+                total_recs += 1
+                scan += 24 + sub_sz
+            continue
+
+        while rpos + 24 <= g_end:
+            rec_sz, = struct.unpack("<I", blob[rpos+4:rpos+8])
+            rec_flags, fid = struct.unpack("<II", blob[rpos+8:rpos+16])
+            rec_extra = blob[rpos+16:rpos+24]
+            rbody = bytearray(blob[rpos+24:rpos+24+rec_sz])
+            rpos += 24 + rec_sz
+
+            owner_idx = fid >> 24
+            if owner_idx not in old_to_new:
+                pruned_weaps += 1
+                continue
+
+            valid_obts = True
+            sp = 0
+            while sp + 6 <= len(rbody):
+                st = bytes(rbody[sp:sp+4])
+                ssz, = struct.unpack("<H", rbody[sp+4:sp+6])
+                if st == b"OBTS" and ssz >= 18:
+                    att_cnt, = struct.unpack("<I", rbody[sp+6:sp+10])
+                    kw_cnt = rbody[sp+20]
+                    apos = sp + 6 + 16 + kw_cnt * 4 + 2
+                    for _ in range(att_cnt):
+                        if apos + 7 <= sp + 6 + ssz:
+                            ofid, = struct.unpack("<I", rbody[apos:apos+4])
+                            oidx = ofid >> 24
+                            if oidx not in old_to_new:
+                                valid_obts = False
+                                break
+                            rbody[apos:apos+4] = struct.pack("<I", (old_to_new[oidx] << 24) | (ofid & 0x00FFFFFF))
+                        apos += 7
+                    if not valid_obts:
+                        break
+                sp += 6 + ssz
+
+            if not valid_obts:
+                pruned_weaps += 1
+                continue
+
+            new_fid = (old_to_new[owner_idx] << 24) | (fid & 0x00FFFFFF)
+            rec_hdr = b"WEAP" + struct.pack("<II", len(rbody), rec_flags) + struct.pack("<I", new_fid) + rec_extra
+            grup_hdr = b"GRUP" + struct.pack("<I", 24 + len(rec_hdr) + len(rbody)) + b"WEAP" + struct.pack("<III", 0, 0, 0)
+            kept_grups.extend(grup_hdr + rec_hdr + rbody)
+            total_recs += 1
+
+    new_tes4_body = bytearray(other_subs)
+    for dm in kept_masters:
+        mb = dm.encode("utf-8") + b"\x00"
+        new_tes4_body.extend(b"MAST" + struct.pack("<H", len(mb)) + mb + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+    new_tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(new_tes4_body), 0x00000201, 0, 0, 131) + b"\x00\x00"
+    final_blob = bytearray(new_tes4_hdr) + new_tes4_body + kept_grups
+
+    hedr_pos = final_blob.find(b"HEDR\x0C\x00")
+    if hedr_pos != -1:
+        final_blob[hedr_pos+10:hedr_pos+14] = struct.pack("<I", max(1, total_recs))
+
+    with open(esl_path, "wb") as f:
+        f.write(final_blob)
+    return pruned_weaps + (len(masters) - len(kept_masters))

@@ -82,6 +82,13 @@ def build_override_shield(
 ) -> tuple:
     """Build RobCo_OverrideShield.esp blocking LVLI/LVLN overrides from converted plugins."""
     mods_dir = organizer.modsPath()
+    try:
+        from .robco_engine import prune_missing_masters_from_esl
+        plist = organizer.pluginList()
+        act = {pn for pn in plist.pluginNames() if bool(plist.state(pn) & 2)}
+        prune_missing_masters_from_esl(os.path.join(mods_dir, "RobCo Auto-Injected Patches", "RobCo_AutoSubLists.esl"), act)
+    except Exception:
+        pass
     patched_plugins = find_already_patched_plugins(mods_dir)
     whitelist_lower = {p.strip().lower() for p in whitelist_plugins if p.strip()}
 

@@ -954,6 +954,13 @@ class BatchPreviewDialog(QDialog):
     # ------------------------------------------------------------------
     def _apply_batch(self):
         mods_dir = self.organizer.modsPath()
+        try:
+            from .robco_engine import prune_missing_masters_from_esl
+            plist = self.organizer.pluginList()
+            act = {pn for pn in plist.pluginNames() if bool(plist.state(pn) & 2)}
+            prune_missing_masters_from_esl(os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esl"), act)
+        except Exception:
+            pass
         ini_dir  = os.path.join(
             mods_dir, OUTPUT_MOD_NAME,
             "F4SE", "Plugins", "RobCo_Patcher", "leveledList",
