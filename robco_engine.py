@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Tuple
 import struct
 
 def append_sublist_to_esl(esl_path, rec_type_str, edid_name):
-    """Creates or appends an LVLI or LVLN record (LVLF=0x01) in RobCo_AutoSubLists.esl.
+    """Creates or appends an LVLI or LVLN record (LVLF=0x01) in RobCo_AutoSubLists.esp.
 
     If a record with the same EDID already exists in the ESL, returns its existing FormID.
     """
@@ -23,7 +23,7 @@ def append_sublist_to_esl(esl_path, rec_type_str, edid_name):
         cnam = b"CNAM\x0E\x00RobCoWizard\x00\x00\x00"
         mast = b"MAST\x0D\x00Fallout4.esm\x00" + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00"
         tes4_body = hedr + cnam + mast
-        tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(tes4_body), 0x00000201, 0, 0, 131) + b"\x00\x00"
+        tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(tes4_body), 0x00000200, 0, 0, 131) + b"\x00\x00"
         next_id = 0x000800
         grup_hdr = b"GRUP" + struct.pack("<I", 24 + 24 + len(sub_blob)) + rec_tag + struct.pack("<III", 0, 0, 0)
         rec_hdr = rec_tag + struct.pack("<IIIIH", len(sub_blob), 0, next_id, 0, 131) + b"\x00\x00"
@@ -475,7 +475,7 @@ def write_robco_ini(
         ini_path = os.path.join(ini_dir, f"{plugin_stem}_RobCo_LL.ini")
 
         out_mod_root = os.path.abspath(os.path.join(ini_dir, "..", "..", "..", ".."))
-        esl_name = "RobCo_AutoSubLists.esl"
+        esl_name = "RobCo_AutoSubLists.esp"
         esl_path = os.path.join(out_mod_root, esl_name)
 
         raw_tiers = level if isinstance(level, list) else [(int(level), int(chance), 1)]
@@ -752,7 +752,7 @@ def inject_obts_templates(
     weap_targets: List[dict],
     resolve_plugin_fn,
 ) -> int:
-    """Clone base WEAP records into RobCo_AutoSubLists.esl and append OBTS variants using addon OMODs."""
+    """Clone base WEAP records into RobCo_AutoSubLists.esp and append OBTS variants using addon OMODs."""
     import zlib
     try:
         from .robco_parser import parse_plugin
@@ -908,7 +908,7 @@ def inject_obts_templates(
         new_tes4_body.extend(b"MAST" + struct.pack("<H", len(mb)) + mb + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00")
 
     old_body_tail = blob[24 + tes4_sz:]
-    new_tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(new_tes4_body), 0x00000201, 0, 0, 131) + b"\x00\x00"
+    new_tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(new_tes4_body), 0x00000200, 0, 0, 131) + b"\x00\x00"
     final_blob = bytearray(new_tes4_hdr) + new_tes4_body + old_body_tail + new_weap_records
 
     hedr_pos = final_blob.find(b"HEDR\x0C\x00")
@@ -922,7 +922,7 @@ def inject_obts_templates(
 
 
 def prune_missing_masters_from_esl(esl_path: str, active_plugins: set) -> int:
-    """Remove missing/disabled masters and orphaned OBTS WEAP records from RobCo_AutoSubLists.esl."""
+    """Remove missing/disabled masters and orphaned OBTS WEAP records from RobCo_AutoSubLists.esp."""
     if not os.path.isfile(esl_path):
         return 0
     active_low = {p.lower() for p in active_plugins} | {"fallout4.esm"}
@@ -1031,7 +1031,7 @@ def prune_missing_masters_from_esl(esl_path: str, active_plugins: set) -> int:
     for dm in kept_masters:
         mb = dm.encode("utf-8") + b"\x00"
         new_tes4_body.extend(b"MAST" + struct.pack("<H", len(mb)) + mb + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00")
-    new_tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(new_tes4_body), 0x00000201, 0, 0, 131) + b"\x00\x00"
+    new_tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(new_tes4_body), 0x00000200, 0, 0, 131) + b"\x00\x00"
     final_blob = bytearray(new_tes4_hdr) + new_tes4_body + kept_grups
 
     hedr_pos = final_blob.find(b"HEDR\x0C\x00")

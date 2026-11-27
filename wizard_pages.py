@@ -570,7 +570,7 @@ class TierSettingsPage(QWizardPage):
         layout.addLayout(custom_row)
 
         self.checkbox_bundle = QCheckBox(
-            "Bundle multi-item selections into 1-mod-1-vote sub-list (RobCo_AutoSubLists.esl)"
+            "Bundle multi-item selections into 1-mod-1-vote sub-list (RobCo_AutoSubLists.esp)"
         )
         self.checkbox_bundle.setChecked(True)
         layout.addWidget(self.checkbox_bundle)

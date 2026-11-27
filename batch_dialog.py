@@ -634,7 +634,7 @@ class BatchPreviewDialog(QDialog):
         reply = QMessageBox.question(
             self,
             "Purge Wizard Output",
-            "Delete all wizard-generated *_RobCo_LL.ini / *_RobCo_OMOD.ini files and reset RobCo_AutoSubLists.esl so you can re-generate fresh patches?\n\n"
+            "Delete all wizard-generated *_RobCo_LL.ini / *_RobCo_OMOD.ini files and reset RobCo_AutoSubLists.esp so you can re-generate fresh patches?\n\n"
             "(Custom INIs not ending in _RobCo_LL.ini and RobCo_OverrideShield.esp will be kept.)",
             yes_btn | no_btn,
         )
@@ -651,7 +651,7 @@ class BatchPreviewDialog(QDialog):
                     except Exception:
                         pass
 
-        esl_path = os.path.join(out_root, "RobCo_AutoSubLists.esl")
+        esl_path = os.path.join(out_root, "RobCo_AutoSubLists.esp")
         if os.path.isfile(esl_path):
             try:
                 os.remove(esl_path)
@@ -669,7 +669,7 @@ class BatchPreviewDialog(QDialog):
         QMessageBox.information(
             self,
             "Purge Complete",
-            f"Removed {removed_inis} wizard INI file(s) and reset RobCo_AutoSubLists.esl.\n"
+            f"Removed {removed_inis} wizard INI file(s) and reset RobCo_AutoSubLists.esp.\n"
             f"Rescanned {self.table.rowCount()} unpatched mod(s).",
         )
 
@@ -988,7 +988,7 @@ class BatchPreviewDialog(QDialog):
             from .robco_engine import prune_missing_masters_from_esl
             plist = self.organizer.pluginList()
             act = {pn for pn in plist.pluginNames() if bool(plist.state(pn) & 2)}
-            prune_missing_masters_from_esl(os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esl"), act)
+            prune_missing_masters_from_esl(os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esp"), act)
             if os.path.isdir(ini_dir):
                 for fn in os.listdir(ini_dir):
                     low = fn.lower()
@@ -1035,7 +1035,7 @@ class BatchPreviewDialog(QDialog):
 
             if sug.get("obts_targets"):
                 from .robco_engine import inject_obts_templates
-                esl_path = os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esl")
+                esl_path = os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esp")
                 added_cnt = inject_obts_templates(
                     esl_path, parsed, sug.get("addon_path", ""),
                     sug["obts_targets"], self.organizer.resolvePath,
@@ -1048,7 +1048,7 @@ class BatchPreviewDialog(QDialog):
                     )
                     target_labels = " | ".join(self._label_map.get(t, t) for t in sug["targets"])
                     audit_rows.append([
-                        f"RobCo_AutoSubLists.esl (+{added_cnt} OBTS)", mod_name, fname,
+                        f"RobCo_AutoSubLists.esp (+{added_cnt} OBTS)", mod_name, fname,
                         injected_items, target_labels, 1, 0, 1,
                     ])
                 continue
