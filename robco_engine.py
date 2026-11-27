@@ -8,10 +8,7 @@ import struct
 import zlib
 
 def append_sublist_to_esl(esl_path, rec_type_str, edid_name):
-    """Creates or appends an LVLI or LVLN record (LVLF=0x01) in RobCo_AutoSubLists.esp.
-
-    If a record with the same EDID already exists in the ESL, returns its existing FormID.
-    """
+    """Creates or appends an LVLI or LVLN record (LVLF=0x01) grouped cleanly by record type in RobCo_AutoSubLists.esp."""
     rec_tag = rec_type_str.encode("ascii")
     edid_bytes = edid_name.encode("utf-8") + b"\x00"
     edid_sub = b"EDID" + struct.pack("<H", len(edid_bytes)) + edid_bytes
@@ -19,55 +16,56 @@ def append_sublist_to_esl(esl_path, rec_type_str, edid_name):
     lvlf_sub = b"LVLF\x01\x00\x01"
     sub_blob = edid_sub + lvld_sub + lvlf_sub
 
-    if not os.path.isfile(esl_path):
-        hedr = b"HEDR\x0C\x00" + struct.pack("<fII", 1.0, 1, 0x000801)
-        cnam = b"CNAM\x0E\x00RobCoWizard\x00\x00\x00"
-        mast = b"MAST\x0D\x00Fallout4.esm\x00" + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-        tes4_body = hedr + cnam + mast
-        tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(tes4_body), 0x00000200, 0, 0, 131) + b"\x00\x00"
-        next_id = 0x000800
-        grup_hdr = b"GRUP" + struct.pack("<I", 24 + 24 + len(sub_blob)) + rec_tag + struct.pack("<III", 0, 0, 0)
-        rec_hdr = rec_tag + struct.pack("<IIIIH", len(sub_blob), 0, next_id, 0, 131) + b"\x00\x00"
-        os.makedirs(os.path.dirname(esl_path), exist_ok=True)
-        with open(esl_path, "wb") as f:
-            f.write(tes4_hdr + tes4_body + grup_hdr + rec_hdr + sub_blob)
-        return f"0x{next_id:06X}"
+    records_by_type = {b"LVLI": [], b"LVLN": []}
+    highest_id = 0x0007FF
 
-    with open(esl_path, "rb") as f:
-        blob = bytearray(f.read())
-
-    highest_id = 0x000800
-    pos = 24 + struct.unpack("<I", blob[4:8])[0]
-    while pos + 24 <= len(blob):
-        tag = blob[pos:pos + 4]
-        sz = struct.unpack("<I", blob[pos + 4:pos + 8])[0]
-        if tag == b"GRUP":
-            pos += 24
-        else:
-            fid = struct.unpack("<I", blob[pos + 12:pos + 16])[0] & 0x000FFF
-            rec_body = blob[pos + 24:pos + 24 + sz]
-            if len(rec_body) >= 6 and rec_body[0:4] == b"EDID":
-                edid_len = struct.unpack("<H", rec_body[4:6])[0]
-                existing_edid = rec_body[6:6 + edid_len].rstrip(b"\x00").decode("utf-8", errors="ignore")
-                if existing_edid == edid_name:
-                    return f"0x{fid:06X}"
-            if fid > highest_id:
-                highest_id = fid
-            pos += 24 + sz
+    if os.path.isfile(esl_path):
+        with open(esl_path, "rb") as f:
+            blob = bytes(f.read())
+        if len(blob) >= 24 and blob[0:4] == b"TES4":
+            pos = 24 + struct.unpack("<I", blob[4:8])[0]
+            while pos + 24 <= len(blob):
+                tag = blob[pos:pos + 4]
+                sz = struct.unpack("<I", blob[pos + 4:pos + 8])[0]
+                if tag == b"GRUP":
+                    pos += 24
+                    continue
+                fid = struct.unpack("<I", blob[pos + 12:pos + 16])[0] & 0x000FFF
+                rec_bytes = blob[pos:pos + 24 + sz]
+                rec_body = blob[pos + 24:pos + 24 + sz]
+                if len(rec_body) >= 6 and rec_body[0:4] == b"EDID":
+                    edid_len = struct.unpack("<H", rec_body[4:6])[0]
+                    existing_edid = rec_body[6:6 + edid_len].rstrip(b"\x00").decode("utf-8", errors="ignore")
+                    if existing_edid == edid_name:
+                        return f"0x{fid:06X}"
+                if fid > highest_id:
+                    highest_id = fid
+                if tag in records_by_type:
+                    records_by_type[tag].append(rec_bytes)
+                pos += 24 + sz
 
     next_id = highest_id + 1
-    rec_count = struct.unpack("<I", blob[34:38])[0] + 1
-    blob[34:38] = struct.pack("<I", rec_count)
-    blob[38:42] = struct.pack("<I", next_id + 1)
-
-    grup_hdr = b"GRUP" + struct.pack("<I", 24 + 24 + len(sub_blob)) + rec_tag + struct.pack("<III", 0, 0, 0)
     rec_hdr = rec_tag + struct.pack("<IIIIH", len(sub_blob), 0, next_id, 0, 131) + b"\x00\x00"
-    blob.extend(grup_hdr + rec_hdr + sub_blob)
+    records_by_type.setdefault(rec_tag, []).append(rec_hdr + sub_blob)
 
+    total_recs = sum(len(v) for v in records_by_type.values())
+    hedr = b"HEDR\x0C\x00" + struct.pack("<fII", 1.0, max(1, total_recs), next_id + 1)
+    cnam = b"CNAM\x0C\x00RobCoWizard\x00"
+    mast = b"MAST\x0D\x00Fallout4.esm\x00" + b"DATA\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    tes4_body = hedr + cnam + mast
+    tes4_hdr = b"TES4" + struct.pack("<IIIIH", len(tes4_body), 0x00000200, 0, 0, 131) + b"\x00\x00"
+
+    grups_blob = bytearray()
+    for rtag in (b"LVLI", b"LVLN"):
+        rlist = records_by_type.get(rtag, [])
+        if rlist:
+            payload = b"".join(rlist)
+            grups_blob.extend(b"GRUP" + struct.pack("<I", 24 + len(payload)) + rtag + struct.pack("<III", 0, 0, 0) + payload)
+
+    os.makedirs(os.path.dirname(esl_path), exist_ok=True)
     with open(esl_path, "wb") as f:
-        f.write(blob)
+        f.write(tes4_hdr + tes4_body + bytes(grups_blob))
     return f"0x{next_id:06X}"
-
 
 WEAPON_LISTS = [
     # Raiders (Hierarchy: Grunts -> Auto/Rifle -> Bosses)
@@ -843,7 +841,18 @@ def inject_obts_templates(esl_path: str, addon_parsed: dict, addon_path: str,
                                 ofid, oidx_b = struct.unpack("<IB", obuf[apos:apos+5])
                                 existing_pairs.add((ofid, oidx_b))
                             apos += 7
+                        appr_kws = set()
+                        for ast, asb, _ in _iter_subs_raw(r_body):
+                            if ast == b"APPR":
+                                for kp in range(0, len(asb) - 3, 4):
+                                    kraw, = struct.unpack("<I", asb[kp:kp+4])
+                                    kidx = kraw >> 24
+                                    kown = (src_masters[kidx] if kidx < len(src_masters) else src_masters[-1]).lower()
+                                    appr_kws.add(f"{kown}|0x{kraw & 0x00FFFFFF:06X}")
                         for om in omods:
+                            ap_str = (om.get("attach_point") or "").lower()
+                            if appr_kws and ap_str not in appr_kws:
+                                continue
                             om_fid = (addon_m_idx << 24) | (int(om["form_id"], 16) & 0x00FFFFFF)
                             if (om_fid, 0) not in existing_pairs:
                                 obuf.extend(struct.pack("<IHB", om_fid, 0, 0))
