@@ -407,6 +407,14 @@ class BatchPreviewDialog(QDialog):
         )
         if _exec_dialog(dlg):
             new_sug = dlg.get_updated_sug(sug)
+            from .robco_utils import save_user_override
+            save_user_override(self.organizer.modsPath(), fname, {
+                "targets": new_sug.get("targets", []),
+                "target_cats": new_sug.get("target_cats", {}),
+                "level": new_sug.get("level", 1),
+                "chance": new_sug.get("chance", 0),
+                "weight": new_sug.get("weight", 1),
+            })
             chk.setData(QtUserRole, (mod_name, fname, parsed, new_sug))
             cb = self._get_row_checkbox(row)
             if cb:
@@ -921,6 +929,11 @@ class BatchPreviewDialog(QDialog):
                     sug_input["npc_list"] = []
                 sug = suggest_targets_heuristic(sug_input, self._counts)
                 sug.setdefault("weight", 1)
+                from .robco_utils import load_user_overrides
+                saved_ov = load_user_overrides(mods_dir).get(fname.lower())
+                if isinstance(saved_ov, dict) and saved_ov.get("targets"):
+                    sug.update(saved_ov)
+                    sug["confidence"] = "high"
                 if not sug["targets"]:
                     self._skipped_mods.append((mod_name, fname, "No matching vanilla target lists"))
                     continue
@@ -959,6 +972,20 @@ class BatchPreviewDialog(QDialog):
             plist = self.organizer.pluginList()
             act = {pn for pn in plist.pluginNames() if bool(plist.state(pn) & 2)}
             prune_missing_masters_from_esl(os.path.join(mods_dir, OUTPUT_MOD_NAME, "RobCo_AutoSubLists.esl"), act)
+            if os.path.isdir(ini_dir):
+                for fn in os.listdir(ini_dir):
+                    low = fn.lower()
+                    if low.endswith("_robco_ll.ini"):
+                        stem = fn[:-13].lower()
+                    elif low.endswith("_robco_omod.ini"):
+                        stem = fn[:-15].lower()
+                    else:
+                        continue
+                    if f"{stem}.esp" not in {p.lower() for p in act} and f"{stem}.esl" not in {p.lower() for p in act}:
+                        try:
+                            os.remove(os.path.join(ini_dir, fn))
+                        except Exception:
+                            pass
         except Exception:
             pass
         ini_dir  = os.path.join(

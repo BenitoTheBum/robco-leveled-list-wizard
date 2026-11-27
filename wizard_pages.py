@@ -684,6 +684,17 @@ class RobCoFomodWizard(QWizard):
         )
 
         if success:
+            from .robco_utils import save_user_override
+            flat_targets = targets.get("WEAP", []) + targets.get("ARMO", []) + targets.get("NPC_", [])
+            t_cats = {f: c for c in ("WEAP", "ARMO", "NPC_") for f in targets.get(c, [])}
+            t0 = tiers[0] if tiers else (1, 0, 1)
+            save_user_override(mods_dir, plugin_fname, {
+                "targets": flat_targets,
+                "target_cats": t_cats,
+                "level": t0[0],
+                "chance": t0[1],
+                "weight": t0[2] if len(t0) > 2 else 1,
+            })
             try:
                 self.organizer.refresh()
             except Exception:

@@ -69,3 +69,34 @@ def save_wizard_prefs(prefs: Dict[str, object]) -> None:
             json.dump(prefs, f, indent=2)
     except Exception:
         pass
+
+
+def _overrides_path(mods_dir: str) -> str:
+    return os.path.join(mods_dir, OUTPUT_MOD_NAME, "user_overrides.json")
+
+
+def load_user_overrides(mods_dir: str) -> dict:
+    path = _overrides_path(mods_dir)
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
+
+
+def save_user_override(mods_dir: str, plugin_fname: str, entry: dict) -> None:
+    if not plugin_fname:
+        return
+    data = load_user_overrides(mods_dir)
+    data[plugin_fname.strip().lower()] = entry
+    path = _overrides_path(mods_dir)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
