@@ -31,6 +31,13 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Compat shims
 # ---------------------------------------------------------------------------
+def _stretch_mode():
+    try:
+        return QHeaderView.ResizeMode.Stretch
+    except AttributeError:
+        return QHeaderView.Stretch
+
+
 from .robco_utils import (
     QtChecked, QtUnchecked, QtUserRole,
     OUTPUT_MOD_NAME, IGNORE_FILE, BLACKLIST_FILE,
