@@ -657,10 +657,8 @@ class BatchPreviewDialog(QDialog):
             except Exception:
                 pass
 
-        try:
-            self.organizer.refresh()
-        except Exception:
-            pass
+        from .robco_utils import auto_activate_output
+        auto_activate_output(self.organizer)
 
         self.table.setRowCount(0)
         self._scan_mods()
@@ -1098,10 +1096,8 @@ class BatchPreviewDialog(QDialog):
                 w.writerow(["INI_File", "Source_Mod", "Plugin", "Injected_Items", "Injected_Into_Lists", "Min_Level", "ChanceNone", "Weight"])
                 w.writerows(audit_rows)
 
-        try:
-            self.organizer.refresh()
-        except Exception:
-            pass
+        from .robco_utils import auto_activate_output
+        auto_activate_output(self.organizer)
 
         all_skipped = self._skipped_mods + unchecked_skipped
         msg = f"Generated {written} RobCo Patcher INI file(s)."

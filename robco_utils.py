@@ -138,3 +138,23 @@ def save_blacklist(plugins: set, mod_names: set = None) -> None:
             json.dump({"plugins": sorted(plugins), "mod_names": sorted(mod_names)}, f, indent=2)
     except Exception:
         pass
+
+
+def auto_activate_output(organizer) -> None:
+    """Refresh MO2 and auto-enable OUTPUT_MOD_NAME + generated ESPs in left and right panes."""
+    try:
+        organizer.refresh()
+    except Exception:
+        pass
+    try:
+        organizer.modList().setActive(OUTPUT_MOD_NAME, True)
+    except Exception:
+        pass
+    try:
+        import mobase
+        plist = organizer.pluginList()
+        for pn in ("RobCo_AutoSubLists.esp", "RobCo_OverrideShield.esp"):
+            if pn in plist.pluginNames():
+                plist.setState(pn, mobase.PluginState.ACTIVE)
+    except Exception:
+        pass

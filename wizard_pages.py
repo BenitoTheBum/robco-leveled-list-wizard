@@ -693,10 +693,8 @@ class RobCoFomodWizard(QWizard):
                 "chance": t0[1],
                 "weight": t0[2] if len(t0) > 2 else 1,
             })
-            try:
-                self.organizer.refresh()
-            except Exception:
-                pass
+            from .robco_utils import auto_activate_output
+            auto_activate_output(self.organizer)
             reply = QMessageBox.question(
                 self, "Patch Saved",
                 "Patch saved!\n\nJump to the next unpatched mod?",
