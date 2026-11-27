@@ -152,20 +152,42 @@ def save_blacklist(plugins: set, mod_names: set = None) -> None:
 
 
 def auto_activate_output(organizer) -> None:
-    """Refresh MO2 and auto-enable OUTPUT_MOD_NAME + generated ESPs in left and right panes."""
+    """Migrate legacy .esl, refresh MO2, auto-enable output mod/ESPs, and place at bottom of load order."""
     try:
+        out_root = os.path.join(organizer.modsPath(), OUTPUT_MOD_NAME)
+        legacy_esl = os.path.join(out_root, "RobCo_AutoSubLists.esl")
+        if os.path.isfile(legacy_esl):
+            os.remove(legacy_esl)
+        ini_dir = os.path.join(out_root, "F4SE", "Plugins", "RobCo_Patcher", "leveledList")
+        if os.path.isdir(ini_dir):
+            for fn in os.listdir(ini_dir):
+                if fn.lower().endswith("_robco_ll.ini"):
+                    fp = os.path.join(ini_dir, fn)
+                    txt = open(fp, "r", encoding="utf-8", errors="ignore").read()
+                    if "RobCo_AutoSubLists.esl|" in txt:
+                        os.remove(fp)
+    except Exception:
+        pass
+    try:
+        organizer.refresh()
+        organizer.modList().setActive(OUTPUT_MOD_NAME, True)
         organizer.refresh()
     except Exception:
         pass
     try:
-        organizer.modList().setActive(OUTPUT_MOD_NAME, True)
-    except Exception:
-        pass
-    try:
         import mobase
+        active_flag = getattr(mobase.PluginState, "ACTIVE", 2)
         plist = organizer.pluginList()
-        for pn in ("RobCo_AutoSubLists.esp", "RobCo_AttachmentTemplates.esp", "RobCo_OverrideShield.esp"):
-            if pn in plist.pluginNames():
-                plist.setState(pn, mobase.PluginState.ACTIVE)
+        names = list(plist.pluginNames())
+        low_map = {n.lower(): n for n in names}
+        bottom = len(names)
+        for offset, target in enumerate(("robco_autosublists.esp", "robco_attachmenttemplates.esp", "robco_overrideshield.esp")):
+            real_name = low_map.get(target)
+            if real_name:
+                plist.setState(real_name, active_flag)
+                try:
+                    plist.setPriority(real_name, bottom + offset)
+                except Exception:
+                    pass
     except Exception:
         pass
