@@ -394,6 +394,8 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
     )
     if is_creature_with_skins:
         armo_recs = []
+    if npc_recs and not weap_recs and not armo_recs and "centaur" in plugin_low:
+        targets = ["Fallout4.esm|0x001478BC"]
 
     _cat_allowed = set()
     if weap_recs:
@@ -598,6 +600,7 @@ def build_omod_slot_targets(addon_parsed: dict, resolve_plugin_fn) -> Tuple[Dict
     vanilla_masters = {
         "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm",
         "dlccoast.esm", "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm",
+        "munitions - an ammo expansion.esl", "tacticalreload.esm", "metroweaponframework.esl",
     }
     custom_masters = [m for m in addon_parsed.get("masters", []) if m.lower() not in vanilla_masters]
 
@@ -719,6 +722,7 @@ def find_obts_weapon_targets(addon_parsed: dict, resolve_plugin_fn) -> List[dict
     vanilla = {
         "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm",
         "dlccoast.esm", "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm",
+        "munitions - an ammo expansion.esl", "tacticalreload.esm", "metroweaponframework.esl",
     }
     custom_masters = [m for m in addon_parsed.get("masters", []) if m.lower() not in vanilla]
     targets = []

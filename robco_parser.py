@@ -219,7 +219,7 @@ def parse_plugin(filepath: str) -> dict:
                     "edid": edid,
                     "name": full or edid or fid_hex,
                     "templates": obte,
-                    "is_unique": has_eitm,
+                    "is_unique": has_eitm or ("unique" in f"{edid} {full}".lower()),
                     "stat": stat_val,
                 }
             elif tag == "ARMO" and not is_non_playable and full:
@@ -229,7 +229,7 @@ def parse_plugin(filepath: str) -> dict:
                     "form_id": fid_hex,
                     "edid": edid,
                     "name": full,
-                    "is_unique": has_eitm,
+                    "is_unique": has_eitm or ("unique" in f"{edid} {full}".lower()),
                     "stat": stat_val,
                 }
             elif tag == "NPC_" and full and not edid.startswith(("MQ", "DLC")):
@@ -328,17 +328,21 @@ def parse_plugin(filepath: str) -> dict:
         {"form_id": fid, "edid": lv["edid"], "category": classify_lvli(fid)}
         for fid, lv in raw_lvli.items()
     ]
-    _vanilla_masters = {
+    _framework_masters = {
         "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm",
         "dlccoast.esm", "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm",
+        "munitions - an ammo expansion.esl", "tacticalreload.esm", "metroweaponframework.esl",
     }
-    has_custom_master = any(m.lower() not in _vanilla_masters for m in masters)
-    _vanilla_masters = {
-        "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm",
-        "dlccoast.esm", "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm",
-    }
-    has_custom_master = any(m.lower() not in _vanilla_masters for m in masters)
-    is_attachment_addon = bool(has_custom_master and len(omod_recs) >= 3 and len(weap_families) <= 2 and not armo_list)
+    low_plug = plugin_name.lower()
+    is_sts_patch = any(k in low_plug for k in ("3dscopes", "sts", "see-through-scopes"))
+    custom_masters = [
+        m for m in masters
+        if m.lower() not in _framework_masters and (is_sts_patch or not m.lower().startswith("cc"))
+    ]
+    is_attachment_addon = bool(
+        custom_masters and len(omod_recs) >= 3
+        and len(weap_families) <= 2 and not armo_list and not raw_npc
+    )
     has_records = bool(root_lvli or weap_families or armo_list or npc_list or is_attachment_addon)
 
     return {
