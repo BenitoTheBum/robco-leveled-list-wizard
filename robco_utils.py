@@ -100,3 +100,18 @@ def save_user_override(mods_dir: str, plugin_fname: str, entry: dict) -> None:
             json.dump(data, f, indent=2)
     except Exception:
         pass
+
+
+def delete_user_override(mods_dir: str, plugin_fname: str) -> bool:
+    data = load_user_overrides(mods_dir)
+    key = plugin_fname.strip().lower()
+    if key in data:
+        del data[key]
+        path = _overrides_path(mods_dir)
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return True
+        except Exception:
+            pass
+    return False

@@ -478,11 +478,22 @@ class BatchPreviewDialog(QDialog):
             self.table.selectRow(idx.row())
         menu = QMenu(self)
         act_edit   = menu.addAction("Edit Selected Row...")
+        act_rst_ov = menu.addAction("Reset Saved Override to Heuristic Default")
         act_bl_esp = menu.addAction("Blacklist Plugin(s) (ESP/ESL Only)")
         act_ign_md = menu.addAction("Ignore Entire Mod(s) (Syncs with Page 1)")
         chosen = menu.exec(self.table.viewport().mapToGlobal(pos)) if hasattr(menu, "exec") else menu.exec_(self.table.viewport().mapToGlobal(pos))
         if chosen == act_edit:
             self._on_edit_row(idx.row(), 0)
+        elif chosen == act_rst_ov:
+            chk = self.table.item(idx.row(), 0)
+            if chk:
+                _, fn, parsed, _ = chk.data(QtUserRole)
+                from .robco_utils import delete_user_override
+                delete_user_override(self.organizer.modsPath(), fn)
+                fresh = suggest_targets_heuristic(parsed, self._counts)
+                fresh.setdefault("weight", 1)
+                chk.setData(QtUserRole, (chk.data(QtUserRole)[0], fn, parsed, fresh))
+                self._refresh_row_display(idx.row(), fresh)
         elif chosen == act_bl_esp:
             self._blacklist_selected_rows(entire_mod=False)
         elif chosen == act_ign_md:
@@ -570,6 +581,34 @@ class BatchPreviewDialog(QDialog):
         btn_rem_mod = QPushButton("Restore Selected Mod(s)")
         mod_lay.addWidget(btn_rem_mod)
         tabs.addTab(tab_mod, f"2. Ignored Mods ({lw_mod.count()})")
+
+        tab_ov = QWidget()
+        ov_lay = QVBoxLayout(tab_ov)
+        ov_lay.addWidget(QLabel("Saved custom rules in user_overrides.json (persists across purges):"))
+        lw_ov = QListWidget()
+        try:
+            lw_ov.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        except AttributeError:
+            lw_ov.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        from .robco_utils import load_user_overrides, delete_user_override
+        for pn in sorted(load_user_overrides(self.organizer.modsPath()).keys()):
+            lw_ov.addItem(pn)
+        ov_lay.addWidget(lw_ov)
+        btn_rem_ov = QPushButton("Delete Selected Saved Override(s)")
+        ov_lay.addWidget(btn_rem_ov)
+        tabs.addTab(tab_ov, f"3. Saved Overrides ({lw_ov.count()})")
+
+        def _restore_ovs():
+            items = lw_ov.selectedItems()
+            if not items:
+                return
+            for it in items:
+                delete_user_override(self.organizer.modsPath(), it.text().strip())
+                lw_ov.takeItem(lw_ov.row(it))
+            tabs.setTabText(2, f"3. Saved Overrides ({lw_ov.count()})")
+            changed[0] = True
+
+        btn_rem_ov.clicked.connect(_restore_ovs)
 
         close_row = QHBoxLayout()
         close_row.addStretch()
