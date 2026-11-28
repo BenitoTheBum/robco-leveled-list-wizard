@@ -360,6 +360,19 @@ def parse_plugin(filepath: str) -> dict:
                 return sub
         return None
 
+    def _lvli_weap_class(fid: str, seen=None) -> str:
+        seen = seen or set()
+        if fid in seen or fid not in raw_lvli:
+            return ""
+        seen.add(fid)
+        for r in raw_lvli[fid]["refs"]:
+            if r in raw_weap and raw_weap[r].get("weap_class"):
+                return raw_weap[r]["weap_class"]
+            sub = _lvli_weap_class(r, seen)
+            if sub:
+                return sub
+        return ""
+
     root_lvli = []
     for fid, lv in raw_lvli.items():
         if fid in referenced_lvlis:
@@ -367,6 +380,7 @@ def parse_plugin(filepath: str) -> dict:
         cat = classify_lvli(fid)
         if cat in ("WEAP", "ARMO"):
             root_lvli.append({
+                "weap_class": _lvli_weap_class(fid) if cat == "WEAP" else "",
                 "type": "LVLI",
                 "category": cat,
                 "form_id": fid,
