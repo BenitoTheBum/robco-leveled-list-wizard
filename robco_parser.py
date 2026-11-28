@@ -176,9 +176,9 @@ def parse_plugin(filepath: str) -> dict:
                 elif stype == b"EITM":
                     has_eitm = True
                 elif stype == b"DNAM":
-                    if tag == "WEAP" and len(chunk) >= 16:
-                        anim_type = int.from_bytes(chunk[:1], "little")
-                        w_flags = int.from_bytes(chunk[12:16], "little")
+                    if tag == "WEAP" and len(chunk) >= 86:
+                        anim_type = int.from_bytes(chunk[85:86], "little")
+                        w_flags = int.from_bytes(chunk[72:76], "little")
                         if anim_type in (0, 1, 2):
                             weap_class = "melee"
                         elif anim_type == 3:
