@@ -206,11 +206,11 @@ def parse_plugin(filepath: str) -> dict:
                         if (af >> 24) == 0 and (af & 0x00FFFFFF) == 0x0005E5B5:
                             has_stock_slot = True
                 elif stype == b"DNAM":
-                    if tag == "WEAP" and len(chunk) >= 100:
-                        anim_off = {136: 85, 144: 89, 148: 93, 160: 97}.get(len(chunk), 85)
-                        anim_type = int.from_bytes(chunk[anim_off:anim_off+1], "little")
-                        w_flags = int.from_bytes(chunk[anim_off-13:anim_off-9], "little")
-                        mag_cap = int.from_bytes(chunk[anim_off-31:anim_off-29], "little")
+                    if tag == "WEAP" and len(chunk) >= 72:
+                        # Byte 64 is AnimationType (0-2=Melee, 3=Pistol, 4=Rifle, 5=Heavy) in FO4 WEAP DNAM (132+ bytes)
+                        anim_type = int.from_bytes(chunk[64:65], "little")
+                        w_flags = int.from_bytes(chunk[68:72], "little")
+                        mag_cap = int.from_bytes(chunk[60:62], "little") if len(chunk) >= 62 else 0
                         if anim_type in (0, 1, 2):
                             kw_signals.append("melee")
                         elif anim_type == 3:
@@ -336,9 +336,9 @@ def parse_plugin(filepath: str) -> dict:
     walk(24 + tes4_size, len(data))
 
     omod_blob = " ".join(f"{o.get('edid', '')} {o.get('name', '')}" for o in omod_recs).lower()
-    omod_auto = any(k in omod_blob for k in ("receiver_auto", "auto_receiver", "fullauto", "full_auto", "rapid"))
-    omod_sniper = any(k in omod_blob for k in ("sniper", "longrange", "recon_scope"))
-    omod_stock = any(k in omod_blob for k in ("stock", "handguard", "foregrip", "barrel_long"))
+    omod_auto = any(k in omod_blob for k in ("auto receiver", "automatic receiver", "receiver_auto", "auto_receiver", "fullauto", "full_auto", "rapid"))
+    omod_sniper = any(k in omod_blob for k in ("sniper", "longrange", "long range", "recon scope", "recon_scope", "anti-materiel"))
+    omod_stock = any(k in omod_blob for k in ("stock", "handguard", "foregrip", "long barrel", "barrel_long"))
     for w in raw_weap.values():
         sc = {"melee": 0, "pistol": 0, "rifle": 0, "auto_rifle": 0, "sniper": 0, "heavy": 0}
         for s in w.get("kw_signals", []): sc[s] = sc.get(s, 0) + 3
