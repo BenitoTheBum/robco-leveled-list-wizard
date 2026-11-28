@@ -161,6 +161,7 @@ def parse_plugin(filepath: str) -> dict:
             obte = 0
             has_eitm = False
             stat_val = 0
+            weap_class = ""
             lvlo_refs = []
             attach_pt = ""
             mnam_fids = []
@@ -176,9 +177,33 @@ def parse_plugin(filepath: str) -> dict:
                     has_eitm = True
                 elif stype == b"DNAM":
                     if tag == "WEAP" and len(chunk) >= 16:
-                        stat_val = struct.unpack("<H", chunk[14:16])[0]
+                        anim_type = chunk[0]
+                        w_flags = struct.unpack("<I", chunk[12:16])[0] if len(chunk) >= 16 else 0
+                        if anim_type in (0, 1, 2):
+                            weap_class = "melee"
+                        elif anim_type == 3:
+                            weap_class = "pistol"
+                        elif anim_type == 5:
+                            weap_class = "heavy"
+                        elif anim_type == 4:
+                            weap_class = "auto_rifle" if (w_flags & 0x00008000) else "rifle"
                     elif tag == "ARMO" and len(chunk) >= 4:
                         stat_val = struct.unpack("<I", chunk[0:4])[0]
+                elif stype == b"KWDA" and tag == "WEAP":
+                    for off in range(0, len(chunk) - 3, 4):
+                        kf = struct.unpack("<I", chunk[off:off+4])
+                        if (kf >> 24) == 0:
+                            low_k = kf & 0x00FFFFFF
+                            if low_k == 0x0004A0A3:
+                                weap_class = "heavy"
+                            elif low_k == 0x0004A0A5 and weap_class != "heavy":
+                                weap_class = "sniper"
+                            elif low_k == 0x0004A0A2 and weap_class not in ("heavy", "sniper"):
+                                weap_class = "auto_rifle"
+                            elif low_k in (0x0004A0A1, 0x0004A0A4) and not weap_class:
+                                weap_class = "rifle"
+                            elif low_k == 0x0004A0A0 and not weap_class:
+                                weap_class = "pistol"
                 elif stype == b"LVLO" and len(chunk) >= 8:
                     lvl, ref_fid = struct.unpack("<HxxI", chunk[0:8])
                     if lvl > 0:
@@ -220,6 +245,7 @@ def parse_plugin(filepath: str) -> dict:
                     "templates": obte,
                     "is_unique": has_eitm or ("unique" in f"{edid} {full}".lower()),
                     "stat": stat_val,
+                    "weap_class": weap_class,
                 }
             elif tag == "ARMO" and not is_non_playable and full:
                 raw_armo[fid_hex] = {
@@ -317,6 +343,7 @@ def parse_plugin(filepath: str) -> dict:
             "name": f"{rep['name']}{var_note}{tmpl_note}",
             "is_unique": all(m["is_unique"] for m in members),
             "stat": rep["stat"],
+            "weap_class": rep.get("weap_class", ""),
         })
 
     armo_list = list(raw_armo.values())
