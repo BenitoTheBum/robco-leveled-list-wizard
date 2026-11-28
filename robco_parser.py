@@ -219,7 +219,7 @@ def parse_plugin(filepath: str) -> dict:
                         attach_pt = f"{m_name}|0x{ap_masked:06X}"
                 elif tag == "OMOD" and stype == b"MNAM":
                     for off in range(0, len(chunk) - 3, 4):
-                        kf = int.from_bytes(chunk[off:off+4], "little")[0]
+                        kf = int.from_bytes(chunk[off:off+4], "little")
                         if kf:
                             m_idx = kf >> 24
                             m_name = masters[m_idx] if m_idx < mast_count else plugin_name
