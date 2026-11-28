@@ -262,9 +262,27 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
             _add_if_open("Fallout4.esm|0x0023D8CA")
             _add_if_open("Fallout4.esm|0x000FD39F")
             matched_specific = True
+    # TIER 2 & TIER 3: Weapon Structural Characteristics (KWDA + DNAM Anim/Flags) -> Nexus Category Fallback
     if weap_recs and not any(t in _WEAPON_FIDS for t in targets):
-        _add_if_open("Fallout4.esm|0x000FD39E")
-        _add_if_open("Fallout4.esm|0x002049DD")
+        nexus_cats = parsed.get("nexus_cats", set())
+        w_classes = {r.get("weap_class", "") for r in weap_recs if r.get("weap_class")}
+        if "heavy" in w_classes:
+            _add_if_open("Fallout4.esm|0x0005F42F")
+            _add_if_open("Fallout4.esm|0x00109248")
+        elif "sniper" in w_classes:
+            _add_if_open("Fallout4.esm|0x00232869")
+        elif w_classes & {"auto_rifle", "rifle"}:
+            _add_if_open("Fallout4.esm|0x0023D8CA")
+            _add_if_open("Fallout4.esm|0x000FD39F")
+        elif "melee" in w_classes:
+            _add_if_open("Fallout4.esm|0x00153515")
+            _add_if_open("Fallout4.esm|0x0005E8E5")
+        elif "pistol" in w_classes:
+            _add_if_open("Fallout4.esm|0x0005E8E5")
+            _add_if_open("Fallout4.esm|0x0002B483")
+        elif "41" in nexus_cats or "42" in nexus_cats:
+            _add_if_open("Fallout4.esm|0x000FD39E")
+            _add_if_open("Fallout4.esm|0x002049DD")
 
     _PA_KEYWORDS = (
         "power armor", "powerarmor", "power_armor", "_power_", "ll_armor_power",
