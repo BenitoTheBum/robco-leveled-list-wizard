@@ -289,7 +289,12 @@ def export_active_robco_inis_csv(parent):
         QMessageBox.warning(parent, "No Active INIs", "Could not find any active F4SE\\Plugins\\RobCo_Patcher\\leveledList\\*.ini files in Overwrite or enabled mods.")
         return
 
-    default_out = os.path.join(os.path.expanduser("~"), "Desktop", "RobCo_Active_INIs_Audit.csv")
+    default_dir = os.path.dirname(os.path.abspath(__file__))
+    for loc_name, root in search_roots:
+        if loc_name.lower() == "robco auto-injected patches" or os.path.isfile(os.path.join(root, "RobCo_AutoSubLists.esp")):
+            default_dir = root
+            break
+    default_out = os.path.join(default_dir, "RobCo_Active_INIs_Audit.csv")
     out_path, _ = QFileDialog.getSaveFileName(parent, "Save Active INIs CSV", default_out, "CSV Files (*.csv)")
     if not out_path:
         return
