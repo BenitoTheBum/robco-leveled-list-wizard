@@ -1136,6 +1136,6 @@ class BatchPreviewDialog(QDialog):
         self.accept()
 
     def _export_active_inis_csv(self):
-        from robco_utils import export_active_robco_inis_csv
+        from .robco_utils import export_active_robco_inis_csv
         export_active_robco_inis_csv(self)
 
