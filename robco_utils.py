@@ -191,3 +191,131 @@ def auto_activate_output(organizer) -> None:
                     pass
     except Exception:
         pass
+
+def export_active_robco_inis_csv(parent):
+    import configparser, csv, glob, os, re, struct
+    from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+    mo2_base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    search_roots = []
+
+    # 1. Check MO2 organizer API if attached to wizard/parent
+    org = getattr(parent, "_organizer", None) or getattr(parent.wizard(), "_organizer", None) if hasattr(parent, "wizard") and parent.wizard() else getattr(parent, "_organizer", None)
+    if org is not None:
+        try:
+            ow = org.overwritePath()
+            if ow and os.path.isdir(ow):
+                search_roots.append(("Overwrite", ow))
+        except Exception:
+            pass
+        try:
+            mods_dir = org.modsPath()
+            modlist = org.modList()
+            for mname in modlist.allModsByProfilePriority():
+                if modlist.state(mname) & 2:
+                    mp = os.path.join(mods_dir, mname)
+                    if os.path.isdir(mp):
+                        search_roots.append((mname, mp))
+        except Exception:
+            pass
+
+    # 2. Fallback: parse ModOrganizer.ini in MO2 root or %LOCALAPPDATA%\ModOrganizer
+    if not search_roots:
+        ini_candidates = [os.path.join(mo2_base, "ModOrganizer.ini")]
+        local_mo2 = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ModOrganizer")
+        if os.path.isdir(local_mo2):
+            for sub in os.listdir(local_mo2):
+                ini_candidates.append(os.path.join(local_mo2, sub, "ModOrganizer.ini"))
+        for mini in ini_candidates:
+            if os.path.isfile(mini):
+                cfg = configparser.ConfigParser(interpolation=None)
+                cfg.read(mini, encoding="utf-8")
+                base_dir = cfg.get("Settings", "base_directory", fallback=os.path.dirname(mini)).replace("/", os.sep)
+                ow_dir = cfg.get("Settings", "overwrite_directory", fallback=os.path.join(base_dir, "overwrite")).replace("%BASE_DIR%", base_dir).replace("/", os.sep)
+                mods_dir = cfg.get("Settings", "mod_directory", fallback=os.path.join(base_dir, "mods")).replace("%BASE_DIR%", base_dir).replace("/", os.sep)
+                if os.path.isdir(ow_dir):
+                    search_roots.append(("Overwrite", ow_dir))
+                if os.path.isdir(mods_dir):
+                    for mname in sorted(os.listdir(mods_dir)):
+                        mp = os.path.join(mods_dir, mname)
+                        if os.path.isdir(mp) and os.path.isdir(os.path.join(mp, "F4SE", "Plugins", "RobCo_Patcher", "leveledList")):
+                            search_roots.append((mname, mp))
+                if search_roots:
+                    break
+
+    # 3. Last resort: scan immediate subdirs of MO2 base
+    if not search_roots:
+        ow_def = os.path.join(mo2_base, "overwrite")
+        if os.path.isdir(ow_def):
+            search_roots.append(("Overwrite", ow_def))
+
+    # Resolve EditorIDs from any RobCo_AutoSubLists.esp found in search_roots
+    sublist_edids = {}
+    for _, root in search_roots:
+        sub_esp = os.path.join(root, "RobCo_AutoSubLists.esp")
+        if os.path.isfile(sub_esp):
+            try:
+                raw = open(sub_esp, "rb").read()
+                pos = 0
+                while pos + 24 <= len(raw):
+                    rtype = raw[pos:pos+4]
+                    rsize, = struct.unpack("<I", raw[pos+4:pos+8])
+                    if rtype == b"GRUP":
+                        pos += 24
+                        continue
+                    fid, = struct.unpack("<I", raw[pos+12:pos+16])
+                    sub = raw[pos+24:pos+24+rsize]
+                    sp = 0
+                    while sp + 6 <= len(sub):
+                        st = sub[sp:sp+4]
+                        slen, = struct.unpack("<H", sub[sp+4:sp+6])
+                        if st == b"EDID":
+                            ed = sub[sp+6:sp+6+slen].rstrip(b"\x00").decode("utf-8", errors="ignore")
+                            sublist_edids[f"0x{fid & 0xFFFFFF:06X}".upper()] = ed
+                            break
+                        sp += 6 + slen
+                    pos += 24 + rsize
+            except Exception:
+                pass
+
+    ini_files = []
+    for loc_name, root in search_roots:
+        ll_dir = os.path.join(root, "F4SE", "Plugins", "RobCo_Patcher", "leveledList")
+        if os.path.isdir(ll_dir):
+            for p in sorted(glob.glob(os.path.join(ll_dir, "*.ini"))):
+                ini_files.append((loc_name, p))
+
+    if not ini_files:
+        QMessageBox.warning(parent, "No Active INIs", "Could not find any active F4SE\\Plugins\\RobCo_Patcher\\leveledList\\*.ini files in Overwrite or enabled mods.")
+        return
+
+    default_out = os.path.join(os.path.expanduser("~"), "Desktop", "RobCo_Active_INIs_Audit.csv")
+    out_path, _ = QFileDialog.getSaveFileName(parent, "Save Active INIs CSV", default_out, "CSV Files (*.csv)")
+    if not out_path:
+        return
+
+    rows = []
+    for loc_name, p in ini_files:
+        fn = os.path.basename(p)
+        for line in open(p, encoding="utf-8", errors="ignore"):
+            s = line.strip()
+            if not s or s.startswith(";"):
+                continue
+            m = re.match(r"filterByLLs\s*=\s*([^:]+):(.+)", s, re.I)
+            if not m:
+                continue
+            target_ll, payload = m.group(1).strip(), m.group(2).strip()
+            for entry in payload.split(","):
+                parts = [x.strip() for x in entry.split("|")]
+                if len(parts) >= 4:
+                    src_mod, fid_str, lvl, cnt = parts[0], parts[1], parts[2], parts[3]
+                    norm_fid = f"0x{int(fid_str, 16) & 0xFFFFFF:06X}".upper() if fid_str.lower().startswith("0x") else fid_str
+                    edid = sublist_edids.get(norm_fid, "") if src_mod.lower() == "robco_autosublists.esp" else ""
+                    rows.append([loc_name, fn, target_ll, src_mod, fid_str, edid, lvl, cnt])
+
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["Source_Location", "INI_File", "Target_LeveledList", "Injected_Plugin", "FormID", "Resolved_SubList_EDID", "Level", "Count"])
+        w.writerows(rows)
+
+    QMessageBox.information(parent, "Export Complete", f"Exported {len(rows)} active RobCo entries from {len(ini_files)} INI files to:\n{out_path}")
