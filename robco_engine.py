@@ -199,6 +199,13 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
         if fid not in targets and counts.get(fid, 0) < 245:
             targets.append(fid)
 
+    plugin_low = parsed.get("plugin_name", "").lower()
+    internal_weap_lvlis = [r for r in parsed.get("lvli_list", []) if r.get("category") == "WEAP"]
+    weap_recs = [r for r in parsed.get("root_lvli", []) if r.get("category") == "WEAP"] + parsed.get("weap_families", []) + internal_weap_lvlis
+    armo_recs = [r for r in parsed.get("root_lvli", []) if r.get("category") == "ARMO"] + parsed.get("armo_list", [])
+    npc_recs  = parsed.get("npc_list", [])
+
+    # TIER 1: Author's Original Leveled Lists (Direct Overrides)
     valid_target_ids = {f for _, f in (WEAPON_LISTS + ARMOR_LISTS + CREATURE_LISTS)}
     for ov_fid in parsed.get("vanilla_ll_overrides", []):
         if ov_fid in valid_target_ids:
@@ -206,17 +213,8 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
                 continue
             if ov_fid in _ARMOR_FIDS and not armo_recs:
                 continue
-            if ov_fid in _WEAPON_FIDS and not weap_recs:
-                continue
-            if ov_fid in _ARMOR_FIDS and not armo_recs:
-                continue
             _add_if_open(ov_fid)
             matched_specific = True
-
-    plugin_low = parsed.get("plugin_name", "").lower()
-    weap_recs = [r for r in parsed.get("root_lvli", []) if r.get("category") == "WEAP"] + parsed.get("weap_families", [])
-    armo_recs = [r for r in parsed.get("root_lvli", []) if r.get("category") == "ARMO"] + parsed.get("armo_list", [])
-    npc_recs  = parsed.get("npc_list", [])
 
     for r in weap_recs:
         raw_nm = r.get("name", "").lower()
@@ -288,7 +286,7 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
         elif "pistol" in w_classes:
             _add_if_open("Fallout4.esm|0x0005E8E5")
             _add_if_open("Fallout4.esm|0x0002B483")
-        elif "41" in nexus_cats or "42" in nexus_cats:
+        elif "41" in nexus_cats or "42" in nexus_cats or weap_recs:
             _add_if_open("Fallout4.esm|0x000FD39E")
             _add_if_open("Fallout4.esm|0x002049DD")
 
@@ -541,7 +539,8 @@ def write_robco_ini(
             else:
                 buckets = {"General": records}
 
-            for fac_name, fac_records in buckets.items():
+            ordered_buckets = sorted(buckets.items(), key=lambda kv: (kv[0] == "General", kv[0]))
+            for fac_name, fac_records in ordered_buckets:
                 fac_targets = _filter_targets_for_faction(cat_targets, fac_name)
                 if not fac_targets:
                     continue

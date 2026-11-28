@@ -942,6 +942,7 @@ class BatchPreviewDialog(QDialog):
                     continue
 
                 sug_input = dict(parsed)
+                sug_input["nexus_cats"] = cats
                 if has_injectable_gear:
                     sug_input["npc_list"] = []
                 sug = suggest_targets_heuristic(sug_input, self._counts)

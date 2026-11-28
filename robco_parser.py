@@ -87,6 +87,7 @@ def parse_plugin(filepath: str) -> dict:
     raw_armo = {}
     raw_npc = {}
     raw_lvli = {}
+    kywd_map = {}
     omod_recs = []
     has_script_injector = False
     vanilla_ll_overrides = set()
@@ -146,7 +147,7 @@ def parse_plugin(filepath: str) -> dict:
                 new_cell_count += 1
                 continue
 
-            if tag not in ("WEAP", "ARMO", "NPC_", "LVLI", "LVLN", "QUST", "OMOD"):
+            if tag not in ("WEAP", "ARMO", "NPC_", "LVLI", "LVLN", "QUST", "OMOD", "KYWD"):
                 continue
 
             body = data[body_start:body_end]
@@ -204,6 +205,20 @@ def parse_plugin(filepath: str) -> dict:
                                 weap_class = "rifle"
                             elif low_k == 0x0004A0A0 and not weap_class:
                                 weap_class = "pistol"
+                            elif low_k in (0x0005240E, 0x0004A0A6, 0x0004A0A7) and not weap_class:
+                                weap_class = "melee"
+                        k_edid = kywd_map.get(kf & 0x00FFFFFF, "")
+                        if k_edid and not weap_class:
+                            if any(x in k_edid for x in ("heavy", "minigun", "gatling", "launcher")):
+                                weap_class = "heavy"
+                            elif "sniper" in k_edid:
+                                weap_class = "sniper"
+                            elif any(x in k_edid for x in ("rifle", "submachine", "smg", "shotgun", "carbine", "auto")):
+                                weap_class = "auto_rifle"
+                            elif any(x in k_edid for x in ("pistol", "revolver", "1911", "luger", "handgun")):
+                                weap_class = "pistol"
+                            elif "melee" in k_edid:
+                                weap_class = "melee"
                 elif stype == b"LVLO" and len(chunk) >= 8:
                     lvl, ref_fid = struct.unpack("<HxxI", chunk[0:8])
                     if lvl > 0:
@@ -225,6 +240,10 @@ def parse_plugin(filepath: str) -> dict:
                             m_name = masters[m_idx] if m_idx < mast_count else plugin_name
                             kf_masked = (kf & 0x00000FFF) if (m_name.lower().endswith(".esl") or (m_idx >= mast_count and is_esl)) else (kf & 0x00FFFFFF)
                             mnam_fids.append(f"{m_name}|0x{kf_masked:06X}")
+
+            if tag == "KYWD":
+                kywd_map[form_id & 0x00FFFFFF] = edid.lower()
+                continue
 
             if tag == "QUST":
                 low = edid.lower()
