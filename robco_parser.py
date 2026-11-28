@@ -389,6 +389,25 @@ def parse_plugin(filepath: str) -> dict:
         best, val = max(sc.items(), key=lambda kv: kv)
         w["weap_class"] = best if val > 0 else ""
 
+    omod_blob = " ".join(f"{o.get('edid', '')} {o.get('name', '')}" for o in omod_recs).lower()
+    omod_auto = any(k in omod_blob for k in ("receiver_auto", "auto_receiver", "fullauto", "full_auto", "rapid"))
+    omod_sniper = any(k in omod_blob for k in ("sniper", "longrange", "recon_scope"))
+    omod_stock = any(k in omod_blob for k in ("stock", "handguard", "foregrip", "barrel_long"))
+    for w in raw_weap.values():
+        sc = {"melee": 0, "pistol": 0, "rifle": 0, "auto_rifle": 0, "sniper": 0, "heavy": 0}
+        for s in w.get("kw_signals", []): sc[s] = sc.get(s, 0) + 3
+        if w.get("has_stock_slot") or omod_stock: sc["rifle"] += 2
+        if omod_auto: sc["auto_rifle"] += 2
+        if omod_sniper: sc["sniper"] += 2
+        if w.get("mag_cap", 0) >= 50: sc["heavy"] += 2; sc["auto_rifle"] += 1
+        elif w.get("mag_cap", 0) >= 25: sc["auto_rifle"] += 1
+        wt = w.get("weight", 0.0)
+        if wt >= 18.0: sc["heavy"] += 2
+        elif wt >= 6.0: sc["rifle"] += 1
+        elif 0.0 < wt < 4.5: sc["pistol"] += 1
+        best, val = max(sc.items(), key=lambda kv: kv)
+        w["weap_class"] = best if val > 0 else ""
+
     families = {}
     for w in raw_weap.values():
         key = w["name"].strip().lower()
