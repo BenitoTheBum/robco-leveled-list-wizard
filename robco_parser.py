@@ -198,6 +198,13 @@ def parse_plugin(filepath: str) -> dict:
                         af = int.from_bytes(chunk[off:off+4], "little")
                         if (af >> 24) == 0 and (af & 0x00FFFFFF) == 0x0005E5B5:
                             has_stock_slot = True
+                elif stype == b"DATA" and tag == "WEAP" and len(chunk) >= 8:
+                    _, weap_weight = struct.unpack("<If", chunk[0:8])
+                elif stype == b"APPR" and tag == "WEAP":
+                    for off in range(0, len(chunk) - 3, 4):
+                        af = int.from_bytes(chunk[off:off+4], "little")
+                        if (af >> 24) == 0 and (af & 0x00FFFFFF) == 0x0005E5B5:
+                            has_stock_slot = True
                 elif stype == b"DNAM":
                     if tag == "WEAP" and len(chunk) >= 100:
                         anim_off = {136: 85, 144: 89, 148: 93, 160: 97}.get(len(chunk), 85)
@@ -369,6 +376,25 @@ def parse_plugin(filepath: str) -> dict:
                 "is_unique": False,
                 "stat": 20,
             })
+
+    omod_blob = " ".join(f"{o.get('edid', '')} {o.get('name', '')}" for o in omod_recs).lower()
+    omod_auto = any(k in omod_blob for k in ("receiver_auto", "auto_receiver", "fullauto", "full_auto", "rapid"))
+    omod_sniper = any(k in omod_blob for k in ("sniper", "longrange", "recon_scope"))
+    omod_stock = any(k in omod_blob for k in ("stock", "handguard", "foregrip", "barrel_long"))
+    for w in raw_weap.values():
+        sc = {"melee": 0, "pistol": 0, "rifle": 0, "auto_rifle": 0, "sniper": 0, "heavy": 0}
+        for s in w.get("kw_signals", []): sc[s] = sc.get(s, 0) + 3
+        if w.get("has_stock_slot") or omod_stock: sc["rifle"] += 2
+        if omod_auto: sc["auto_rifle"] += 2
+        if omod_sniper: sc["sniper"] += 2
+        if w.get("mag_cap", 0) >= 50: sc["heavy"] += 2; sc["auto_rifle"] += 1
+        elif w.get("mag_cap", 0) >= 25: sc["auto_rifle"] += 1
+        wt = w.get("weight", 0.0)
+        if wt >= 18.0: sc["heavy"] += 2
+        elif wt >= 6.0: sc["rifle"] += 1
+        elif 0.0 < wt < 4.5: sc["pistol"] += 1
+        best, val = max(sc.items(), key=lambda kv: kv)
+        w["weap_class"] = best if val > 0 else ""
 
     omod_blob = " ".join(f"{o.get('edid', '')} {o.get('name', '')}" for o in omod_recs).lower()
     omod_auto = any(k in omod_blob for k in ("receiver_auto", "auto_receiver", "fullauto", "full_auto", "rapid"))
