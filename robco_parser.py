@@ -336,8 +336,8 @@ def parse_plugin(filepath: str) -> dict:
     walk(24 + tes4_size, len(data))
 
     omod_blob = " ".join(f"{o.get('edid', '')} {o.get('name', '')}" for o in omod_recs).lower()
-    omod_auto = any(k in omod_blob for k in ("auto receiver", "automatic receiver", "receiver_auto", "auto_receiver", "fullauto", "full_auto", "rapid"))
-    omod_sniper = any(k in omod_blob for k in ("sniper", "longrange", "long range", "recon scope", "recon_scope", "anti-materiel"))
+    omod_auto = any(k in omod_blob for k in ("auto receiver", "automatic receiver", "receiver_auto", "auto_receiver", "fullauto", "full_auto", "rapid receiver", "full auto"))
+    omod_sniper = any(k in omod_blob for k in ("sniper", "anti-materiel", "anti materiel", "marksman barrel"))
     omod_stock = any(k in omod_blob for k in ("stock", "handguard", "foregrip", "long barrel", "barrel_long"))
     for w in raw_weap.values():
         sc = {"melee": 0, "pistol": 0, "rifle": 0, "auto_rifle": 0, "sniper": 0, "heavy": 0}
