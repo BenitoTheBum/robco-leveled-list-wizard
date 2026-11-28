@@ -202,6 +202,10 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
     valid_target_ids = {f for _, f in (WEAPON_LISTS + ARMOR_LISTS + CREATURE_LISTS)}
     for ov_fid in parsed.get("vanilla_ll_overrides", []):
         if ov_fid in valid_target_ids:
+            if ov_fid in _WEAPON_FIDS and not weap_recs:
+                continue
+            if ov_fid in _ARMOR_FIDS and not armo_recs:
+                continue
             _add_if_open(ov_fid)
             matched_specific = True
 
