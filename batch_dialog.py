@@ -1191,7 +1191,7 @@ class BatchPreviewDialog(QDialog):
                 for entry in payload.split(","):
                     parts = [x.strip() for x in entry.split("|")]
                     if len(parts) >= 4:
-                        src_mod, fid_str, lvl, cnt = parts, parts, parts, parts
+                        src_mod, fid_str, lvl, cnt = parts[0], parts[1], parts[2], parts[3]
                         norm_fid = f"0x{int(fid_str, 16) & 0xFFFFFF:06X}".upper() if fid_str.lower().startswith("0x") else fid_str
                         edid = sublist_edids.get(norm_fid, "") if src_mod.lower() == "robco_autosublists.esp" else ""
                         rows.append([fn, target_ll, src_mod, fid_str, edid, lvl, cnt])
