@@ -309,6 +309,7 @@ class BatchPreviewDialog(QDialog):
         menu_tools = QMenu(btn_tools_menu)
         menu_tools.addAction("Export Preview CSV", self._export_preview_csv)
         menu_tools.addAction("Purge Wizard Output...", self._purge_wizard_output)
+        menu_tools.addAction("Export Active INIs to CSV...", self._export_active_inis_csv)
         btn_tools_menu.setMenu(menu_tools)
 
         btn_edit_row = QPushButton("Edit Selected Row...")
@@ -1133,3 +1134,71 @@ class BatchPreviewDialog(QDialog):
             except Exception:
                 pass
         self.accept()
+
+    def _export_active_inis_csv(self):
+        import csv, glob, os, re, struct
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+        mo2_base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        ini_dir = os.path.join(mo2_base, "overwrite", "F4SE", "Plugins", "RobCo_Patcher", "leveledList")
+        if not os.path.isdir(ini_dir):
+            QMessageBox.warning(self, "No Active INIs", f"Could not find active INI folder:\n{ini_dir}")
+            return
+
+        sublist_edids = {}
+        sub_esp = os.path.join(mo2_base, "overwrite", "RobCo_AutoSubLists.esp")
+        if os.path.isfile(sub_esp):
+            try:
+                raw = open(sub_esp, "rb").read()
+                pos = 0
+                while pos + 24 <= len(raw):
+                    rtype = raw[pos:pos+4]
+                    rsize, = struct.unpack("<I", raw[pos+4:pos+8])
+                    if rtype == b"GRUP":
+                        pos += 24
+                        continue
+                    fid, = struct.unpack("<I", raw[pos+12:pos+16])
+                    sub = raw[pos+24:pos+24+rsize]
+                    sp = 0
+                    while sp + 6 <= len(sub):
+                        st = sub[sp:sp+4]
+                        slen, = struct.unpack("<H", sub[sp+4:sp+6])
+                        if st == b"EDID":
+                            ed = sub[sp+6:sp+6+slen].rstrip(b"\x00").decode("utf-8", errors="ignore")
+                            sublist_edids[f"0x{fid & 0xFFFFFF:06X}".upper()] = ed
+                            break
+                        sp += 6 + slen
+                    pos += 24 + rsize
+            except Exception:
+                pass
+
+        default_out = os.path.join(os.path.expanduser("~"), "Desktop", "RobCo_Active_INIs_Audit.csv")
+        out_path, _ = QFileDialog.getSaveFileName(self, "Save Active INIs CSV", default_out, "CSV Files (*.csv)")
+        if not out_path:
+            return
+
+        rows = []
+        for p in sorted(glob.glob(os.path.join(ini_dir, "*.ini"))):
+            fn = os.path.basename(p)
+            for line in open(p, encoding="utf-8", errors="ignore"):
+                s = line.strip()
+                if not s or s.startswith(";"):
+                    continue
+                m = re.match(r"filterByLLs\s*=\s*([^:]+):(.+)", s, re.I)
+                if not m:
+                    continue
+                target_ll, payload = m.group(1).strip(), m.group(2).strip()
+                for entry in payload.split(","):
+                    parts = [x.strip() for x in entry.split("|")]
+                    if len(parts) >= 4:
+                        src_mod, fid_str, lvl, cnt = parts, parts, parts, parts
+                        norm_fid = f"0x{int(fid_str, 16) & 0xFFFFFF:06X}".upper() if fid_str.lower().startswith("0x") else fid_str
+                        edid = sublist_edids.get(norm_fid, "") if src_mod.lower() == "robco_autosublists.esp" else ""
+                        rows.append([fn, target_ll, src_mod, fid_str, edid, lvl, cnt])
+
+        with open(out_path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["INI_File", "Target_LeveledList", "Injected_Plugin", "FormID", "Resolved_SubList_EDID", "Level", "Count"])
+            w.writerows(rows)
+
+        QMessageBox.information(self, "Export Complete", f"Exported {len(rows)} active RobCo entries to:\n{out_path}")
