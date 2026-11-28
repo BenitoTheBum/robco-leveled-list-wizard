@@ -370,7 +370,8 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
     all_names = " ".join(
         f"{r.get('name', '')} {r.get('edid', '')}" for r in (weap_recs + armo_recs + npc_recs)
     ).lower() + " " + plugin_low
-    is_rifle_class = any(kw in all_names for kw in ("assault", "rifle", "shotgun", "carbine", "ak", "ar15", "m4", "m16", "fal", "g3", "sks", "stg", "scar", "galil"))
+    is_pistol_or_pipe = any(pk in all_names for pk in ("pistol", "revolver", "pipe", "level 1"))
+    is_rifle_class = (not is_pistol_or_pipe) and any(kw in all_names for kw in ("assault", "rifle", "shotgun", "carbine", "ak", "ar15", "m4", "m16", "fal", "g3", "sks", "stg", "scar", "galil"))
     if any(kw in all_names for kw in ("endgame", "gauss", "anti-materiel", "anti materiel", "20mm", "fatman", "fat man", "whalegun")):
         tier_def = _TIERS["late"]
     elif is_rifle_class:
