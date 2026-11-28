@@ -259,7 +259,7 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
             _add_if_open("Fallout4.esm|0x0005F42F")
             _add_if_open("Fallout4.esm|0x00109248")
             matched_specific = True
-        elif any(k in txt for k in ("rifle", "shotgun", "assault", "carbine", "ak", "m4", "m16", "service")):
+        elif any(k in txt for k in ("rifle", "shotgun", "assault", "carbine", "ak", "m4", "m16", "service", "fal", "g3", "sks", "sturmgewehr", "stg", "scar", "galil", "ruger", "lever", "repeater", "bren", "lmg")):
             _add_if_open("Fallout4.esm|0x0023D8CA")
             _add_if_open("Fallout4.esm|0x000FD39F")
             matched_specific = True
@@ -368,22 +368,24 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
     else:
         confidence = "low"
 
+    all_names = " ".join(
+        f"{r.get('name', '')} {r.get('edid', '')}" for r in (weap_recs + armo_recs + npc_recs)
+    ).lower() + " " + plugin_low
+    is_rifle_class = any(kw in all_names for kw in ("assault", "rifle", "shotgun", "carbine", "ak", "ar15", "m4", "m16", "fal", "g3", "sks", "stg", "scar", "galil"))
+    if any(kw in all_names for kw in ("endgame", "gauss", "anti-materiel", "anti materiel", "20mm", "fatman", "fat man", "whalegun")):
+        tier_def = _TIERS["late"]
+    elif is_rifle_class:
+        tier_def = {"tier": "custom", "level": 8, "chance": 45}
+    elif any(kw in all_names for kw in ("combat", "laser", "plasma", "sniper", "heavy", "power")):
+        tier_def = _TIERS["mid"]
+    else:
+        tier_def = _TIERS["early"]
+
     lvlo_levels = parsed.get("lvlo_levels", [])
-    if lvlo_levels:
-        detected_lvl = min(lvlo_levels)
+    if lvlo_levels and max(lvlo_levels) > 1:
+        detected_lvl = min(l for l in lvlo_levels if l > 1)
         tier_key = "late" if detected_lvl >= 25 else ("mid" if detected_lvl >= 12 else "early")
         tier_def = {"tier": "custom", "level": detected_lvl, "chance": _TIERS[tier_key]["chance"]}
-    else:
-        all_names = " ".join(
-            f"{r.get('name', '')} {r.get('edid', '')}" for r in (weap_recs + armo_recs + npc_recs)
-        ).lower() + " " + plugin_low
-        if any(kw in all_names for kw in ("endgame", "gauss", "anti-materiel", "anti materiel", "20mm", "fatman", "fat man", "whalegun")):
-            tier_key = "late"
-        elif any(kw in all_names for kw in ("assault", "combat", "laser", "plasma", "rifle", "shotgun", "sniper", "heavy", "power")):
-            tier_key = "mid"
-        else:
-            tier_key = "early"
-        tier_def = _TIERS[tier_key]
 
     is_creature_with_skins = bool(
         npc_recs and not weap_recs
@@ -406,6 +408,9 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
         targets = [t for t in targets if t in _cat_allowed]
     if npc_recs and not weap_recs and not armo_recs and not targets:
         _add_if_open("Fallout4.esm|0x0002059B")
+
+    if "Fallout4.esm|0x0023D8CA" in targets and "Fallout4.esm|0x0005E8E5" in targets:
+        targets.remove("Fallout4.esm|0x0005E8E5")
 
     return {
         "targets":    targets,
@@ -440,11 +445,16 @@ _FACTION_BUCKETS = [
 ]
 
 
-def _classify_item_faction(rec: dict) -> str:
+def _classify_item_faction(rec: dict, plugin_hint: str = "") -> str:
     txt = f"{rec.get('name', '')} {rec.get('edid', '')}".lower()
     for fac_name, kws, _ in _FACTION_BUCKETS:
         if any(k in txt for k in kws):
             return fac_name
+    if plugin_hint:
+        p_low = plugin_hint.lower()
+        for fac_name, kws, _ in _FACTION_BUCKETS:
+            if any(k in p_low for k in kws):
+                return fac_name
     return "General"
 
 
@@ -487,6 +497,7 @@ def write_robco_ini(
         ]
 
         wrote_any = False
+        injected_sublists_by_target = set()
         for category, raw_records in selections.items():
             cat_targets = targets.get(category, [])
             if not raw_records or not cat_targets:
@@ -499,7 +510,7 @@ def write_robco_ini(
             if split_factions and category in ("WEAP", "ARMO"):
                 buckets: Dict[str, list] = {}
                 for rec in records:
-                    fac = _classify_item_faction(rec)
+                    fac = _classify_item_faction(rec, plugin_fname)
                     buckets.setdefault(fac, []).append(rec)
             else:
                 buckets = {"General": records}
@@ -526,6 +537,10 @@ def write_robco_ini(
                     for lvl, chg, weight in tiers:
                         for _ in range(weight):
                             for target_fid in fac_targets:
+                                dedup_key = (target_fid.lower(), sub_fid.lower(), lvl, chg)
+                                if fac_name == "General" and any(k[0] == target_fid.lower() and k[2] == lvl for k in injected_sublists_by_target):
+                                    continue
+                                injected_sublists_by_target.add(dedup_key)
                                 lines.append(
                                     f"filterByLLs={target_fid}:addToLLs={esl_name}|{sub_fid}~{lvl}~1~{chg}"
                                 )

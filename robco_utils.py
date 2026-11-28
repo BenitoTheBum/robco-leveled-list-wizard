@@ -1,4 +1,4 @@
-import shutil
+﻿import shutil
 """Shared PyQt compatibility shims, constants, and JSON persistence for RobCo Wizard."""
 
 import json
@@ -194,13 +194,18 @@ def auto_activate_output(organizer) -> None:
 
 def export_active_robco_inis_csv(parent):
     import configparser, csv, glob, os, re, struct
-    from PyQt6.QtWidgets import QFileDialog, QMessageBox
+    try:
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox
+    except ImportError:
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
 
     mo2_base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     search_roots = []
 
-    # 1. Check MO2 organizer API if attached to wizard/parent
-    org = getattr(parent, "_organizer", None) or getattr(parent.wizard(), "_organizer", None) if hasattr(parent, "wizard") and parent.wizard() else getattr(parent, "_organizer", None)
+    org = getattr(parent, "organizer", None) or getattr(parent, "_organizer", None)
+    if org is None and getattr(parent, "_wizard", None) is not None:
+        org = getattr(parent._wizard, "organizer", None)
+
     if org is not None:
         try:
             ow = org.overwritePath()
@@ -219,7 +224,6 @@ def export_active_robco_inis_csv(parent):
         except Exception:
             pass
 
-    # 2. Fallback: parse ModOrganizer.ini in MO2 root or %LOCALAPPDATA%\ModOrganizer
     if not search_roots:
         ini_candidates = [os.path.join(mo2_base, "ModOrganizer.ini")]
         local_mo2 = os.path.join(os.environ.get("LOCALAPPDATA", ""), "ModOrganizer")
@@ -243,13 +247,11 @@ def export_active_robco_inis_csv(parent):
                 if search_roots:
                     break
 
-    # 3. Last resort: scan immediate subdirs of MO2 base
     if not search_roots:
         ow_def = os.path.join(mo2_base, "overwrite")
         if os.path.isdir(ow_def):
             search_roots.append(("Overwrite", ow_def))
 
-    # Resolve EditorIDs from any RobCo_AutoSubLists.esp found in search_roots
     sublist_edids = {}
     for _, root in search_roots:
         sub_esp = os.path.join(root, "RobCo_AutoSubLists.esp")
@@ -302,25 +304,37 @@ def export_active_robco_inis_csv(parent):
     rows = []
     for loc_name, p in ini_files:
         fn = os.path.basename(p)
-        for line in open(p, encoding="utf-8", errors="ignore"):
-            s = line.strip()
-            if not s or s.startswith(";"):
-                continue
-            m = re.match(r"(?:addToLLs|filterByLLs)\s*=\s*([^:]+):(.+)", s, re.I)
-            if not m:
-                continue
-            target_ll, payload = m.group(1).strip(), m.group(2).strip()
-            for entry in payload.split(","):
-                parts = [x.strip() for x in entry.split("|")]
-                if len(parts) >= 4:
-                    src_mod, fid_str, lvl, cnt = parts[0], parts[1], parts[2], parts[3]
+        with open(p, encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith(";"):
+                    continue
+                m = re.search(r"filterByLLs\s*=\s*([^:]+):\s*(?:addToLLs|formsToAdd|removeFromLLs|formsToRemove)\s*=\s*(.+)", s, re.I)
+                if not m:
+                    m = re.match(r"(?:addToLLs|formsToAdd|removeFromLLs|formsToRemove)\s*=\s*([^:]+):(.+)", s, re.I)
+                if not m:
+                    continue
+
+                target_ll, payload = m.group(1).strip(), m.group(2).strip()
+                for entry in payload.split(","):
+                    entry = entry.strip()
+                    if "|" not in entry:
+                        continue
+                    src_mod, rest = [x.strip() for x in entry.split("|", 1)]
+                    tilde_parts = [x.strip() for x in rest.split("~")]
+                    fid_str = tilde_parts[0]
+                    lvl = tilde_parts[1] if len(tilde_parts) > 1 else "1"
+                    cnt = tilde_parts[2] if len(tilde_parts) > 2 else "1"
+                    chance = tilde_parts[3] if len(tilde_parts) > 3 else "0"
+
                     norm_fid = f"0x{int(fid_str, 16) & 0xFFFFFF:06X}".upper() if fid_str.lower().startswith("0x") else fid_str
                     edid = sublist_edids.get(norm_fid, "") if src_mod.lower() == "robco_autosublists.esp" else ""
-                    rows.append([loc_name, fn, target_ll, src_mod, fid_str, edid, lvl, cnt])
+                    rows.append([loc_name, fn, target_ll, src_mod, fid_str, edid, lvl, cnt, chance])
 
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["Source_Location", "INI_File", "Target_LeveledList", "Injected_Plugin", "FormID", "Resolved_SubList_EDID", "Level", "Count"])
+        w.writerow(["Source_Location", "INI_File", "Target_LeveledList", "Injected_Plugin", "FormID", "Resolved_SubList_EDID", "Level", "Count", "ChanceNone"])
         w.writerows(rows)
 
     QMessageBox.information(parent, "Export Complete", f"Exported {len(rows)} active RobCo entries from {len(ini_files)} INI files to:\n{out_path}")
+

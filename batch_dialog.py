@@ -855,7 +855,7 @@ class BatchPreviewDialog(QDialog):
                     "interiors", "interior", "player home", "playerhome",
                     "vats", "merchant", "vendor", "gambling", "vending",
                     "follower", "companion", "worldboss", "world boss", "nac.esp",
-                    "settlement", "locations plus", "warehouse", "labs", "sewer",
+                    "settlement", "locations plus", "trailertopia", "warehouse", "labs", "sewer",
                     "retexture", "munitions - ammo expansion", "munitions additional ammo",
                 )
                 _QUEST_DUNGEON_KWS = ("quest", "dungeon", "horror", "antagonist")
