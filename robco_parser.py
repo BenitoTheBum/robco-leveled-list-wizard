@@ -177,7 +177,7 @@ def parse_plugin(filepath: str) -> dict:
                     has_eitm = True
                 elif stype == b"DNAM":
                     if tag == "WEAP" and len(chunk) >= 16:
-                        anim_type = chunk[0]
+                        anim_type = chunk[0][0]
                         w_flags = struct.unpack("<I", chunk[12:16])[0] if len(chunk) >= 16 else 0
                         if anim_type in (0, 1, 2):
                             weap_class = "melee"
@@ -188,10 +188,10 @@ def parse_plugin(filepath: str) -> dict:
                         elif anim_type == 4:
                             weap_class = "auto_rifle" if (w_flags & 0x00008000) else "rifle"
                     elif tag == "ARMO" and len(chunk) >= 4:
-                        stat_val = struct.unpack("<I", chunk[0:4])[0]
+                        stat_val = struct.unpack("<I", chunk[0:4])[0][0]
                 elif stype == b"KWDA" and tag == "WEAP":
                     for off in range(0, len(chunk) - 3, 4):
-                        kf = struct.unpack("<I", chunk[off:off+4])
+                        kf = struct.unpack("<I", chunk[off:off+4])[0]
                         if (kf >> 24) == 0:
                             low_k = kf & 0x00FFFFFF
                             if low_k == 0x0004A0A3:
@@ -219,7 +219,7 @@ def parse_plugin(filepath: str) -> dict:
                         attach_pt = f"{m_name}|0x{ap_masked:06X}"
                 elif tag == "OMOD" and stype == b"MNAM":
                     for off in range(0, len(chunk) - 3, 4):
-                        kf = struct.unpack("<I", chunk[off:off+4])[0]
+                        kf = struct.unpack("<I", chunk[off:off+4])[0][0]
                         if kf:
                             m_idx = kf >> 24
                             m_name = masters[m_idx] if m_idx < mast_count else plugin_name
