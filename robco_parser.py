@@ -10,7 +10,7 @@ def find_already_patched_plugins(mods_dir: str, active_mods: set = None) -> set:
     if not os.path.isdir(mods_dir):
         return patched
 
-    pattern = re.compile(r"addToLLs=([^|~:\s]+\.(?:esm|esp|esl))\|", re.IGNORECASE)
+    pattern = re.compile(r"addToLLs=([^|~:\r\n]+\.(?:esm|esp|esl))\|", re.IGNORECASE)
     folders = active_mods if active_mods is not None else os.listdir(mods_dir)
     for mod_folder in folders:
         ll_dir = os.path.join(mods_dir, mod_folder, "F4SE", "Plugins", "RobCo_Patcher", "leveledList")
