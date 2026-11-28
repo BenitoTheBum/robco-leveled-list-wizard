@@ -306,7 +306,7 @@ def export_active_robco_inis_csv(parent):
             s = line.strip()
             if not s or s.startswith(";"):
                 continue
-            m = re.match(r"filterByLLs\s*=\s*([^:]+):(.+)", s, re.I)
+            m = re.match(r"(?:addToLLs|filterByLLs)\s*=\s*([^:]+):(.+)", s, re.I)
             if not m:
                 continue
             target_ll, payload = m.group(1).strip(), m.group(2).strip()
