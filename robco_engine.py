@@ -206,6 +206,10 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
                 continue
             if ov_fid in _ARMOR_FIDS and not armo_recs:
                 continue
+            if ov_fid in _WEAPON_FIDS and not weap_recs:
+                continue
+            if ov_fid in _ARMOR_FIDS and not armo_recs:
+                continue
             _add_if_open(ov_fid)
             matched_specific = True
 
