@@ -212,8 +212,7 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
 
     for r in weap_recs:
         raw_nm = r.get("name", "").lower()
-        extra_ctx = f" {plugin_low}" if any(g in raw_nm for g in ("default", "simple", "standard", "random", "epic")) else ""
-        txt = f"{raw_nm} {r.get('edid', '').lower()}{extra_ctx}"
+        txt = f"{raw_nm} {r.get('edid', '').lower()} {plugin_low}"
 
         # 1. Explicit faction-configured weapon variants (checked first)
         if any(k in txt for k in ("bos", "brotherhood", "paladin", "knight", "enclave")):
@@ -277,7 +276,7 @@ def suggest_targets_heuristic(parsed: dict, counts: Dict[str, int]) -> dict:
     for r in armo_recs:
         txt = f"{r.get('name', '')} {r.get('edid', '')} {plugin_low}".lower()
         is_pa = any(k in txt for k in _PA_KEYWORDS)
-        if is_pa:
+        if is_pa and (len(armo_recs) <= 15 or any(k in plugin_low for k in _PA_KEYWORDS)):
             has_power_armor = True
             _add_if_open("Fallout4.esm|0x0018AE53")
             _add_if_open("Fallout4.esm|0x00137824")
