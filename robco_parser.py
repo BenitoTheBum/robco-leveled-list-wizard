@@ -121,6 +121,16 @@ def parse_plugin(filepath: str) -> dict:
             tag = rec_type.decode("ascii", errors="ignore")
             if tag == "CELL":
                 total_cell_edits += 1
+            if tag == "KYWD":
+                kb = data[body_start:body_end]
+                if (rec_flags & 0x00040000) and len(kb) >= 4:
+                    try: kb = zlib.decompress(kb[4:])
+                    except Exception: kb = b""
+                for st, ch in _iter_subrecords(kb):
+                    if st == b"EDID":
+                        kywd_map[form_id & 0x00FFFFFF] = ch.rstrip(b"\x00").decode("utf-8", "ignore").lower()
+                        break
+                continue
             is_override = (form_id >> 24) < mast_count
 
             if is_override:
@@ -162,6 +172,11 @@ def parse_plugin(filepath: str) -> dict:
             obte = 0
             has_eitm = False
             stat_val = 0
+            weap_weight = 0.0
+            mag_cap = 0
+            has_stock_slot = False
+            kw_signals = []
+            anim_signal = ""
             weap_class = ""
             lvlo_refs = []
             attach_pt = ""
@@ -176,18 +191,27 @@ def parse_plugin(filepath: str) -> dict:
                     obte = struct.unpack("<I", chunk[0:4])[0]
                 elif stype == b"EITM":
                     has_eitm = True
+                elif stype == b"DATA" and tag == "WEAP" and len(chunk) >= 8:
+                    _, weap_weight = struct.unpack("<If", chunk[0:8])
+                elif stype == b"APPR" and tag == "WEAP":
+                    for off in range(0, len(chunk) - 3, 4):
+                        af = int.from_bytes(chunk[off:off+4], "little")
+                        if (af >> 24) == 0 and (af & 0x00FFFFFF) == 0x0005E5B5:
+                            has_stock_slot = True
                 elif stype == b"DNAM":
-                    if tag == "WEAP" and len(chunk) >= 86:
-                        anim_type = int.from_bytes(chunk[85:86], "little")
-                        w_flags = int.from_bytes(chunk[72:76], "little")
+                    if tag == "WEAP" and len(chunk) >= 100:
+                        anim_off = {136: 85, 144: 89, 148: 93, 160: 97}.get(len(chunk), 85)
+                        anim_type = int.from_bytes(chunk[anim_off:anim_off+1], "little")
+                        w_flags = int.from_bytes(chunk[anim_off-13:anim_off-9], "little")
+                        mag_cap = int.from_bytes(chunk[anim_off-31:anim_off-29], "little")
                         if anim_type in (0, 1, 2):
-                            weap_class = "melee"
+                            kw_signals.append("melee")
                         elif anim_type == 3:
-                            weap_class = "pistol"
+                            kw_signals.append("pistol")
                         elif anim_type == 5:
-                            weap_class = "heavy"
+                            kw_signals.append("heavy")
                         elif anim_type == 4:
-                            weap_class = "auto_rifle" if (w_flags & 0x00008000) else "rifle"
+                            kw_signals.append("auto_rifle") if (w_flags & 0x00008000) else "rifle"
                     elif tag == "ARMO" and len(chunk) >= 4:
                         stat_val = int.from_bytes(chunk[0:4], "little")
                 elif stype == b"KWDA" and tag == "WEAP":
@@ -196,29 +220,29 @@ def parse_plugin(filepath: str) -> dict:
                         if (kf >> 24) == 0:
                             low_k = kf & 0x00FFFFFF
                             if low_k == 0x0004A0A3:
-                                weap_class = "heavy"
+                                kw_signals.append("heavy")
                             elif low_k == 0x0004A0A5 and weap_class != "heavy":
-                                weap_class = "sniper"
+                                kw_signals.append("sniper")
                             elif low_k == 0x0004A0A2 and weap_class not in ("heavy", "sniper"):
-                                weap_class = "auto_rifle"
+                                kw_signals.append("auto_rifle")
                             elif low_k in (0x0004A0A1, 0x0004A0A4) and not weap_class:
-                                weap_class = "rifle"
+                                kw_signals.append("rifle")
                             elif low_k == 0x0004A0A0 and not weap_class:
-                                weap_class = "pistol"
+                                kw_signals.append("pistol")
                             elif low_k in (0x0005240E, 0x0004A0A6, 0x0004A0A7) and not weap_class:
-                                weap_class = "melee"
+                                kw_signals.append("melee")
                         k_edid = kywd_map.get(kf & 0x00FFFFFF, "")
                         if k_edid and not weap_class:
                             if any(x in k_edid for x in ("heavy", "minigun", "gatling", "launcher")):
-                                weap_class = "heavy"
+                                kw_signals.append("heavy")
                             elif "sniper" in k_edid:
-                                weap_class = "sniper"
+                                kw_signals.append("sniper")
                             elif any(x in k_edid for x in ("rifle", "submachine", "smg", "shotgun", "carbine", "auto")):
-                                weap_class = "auto_rifle"
+                                kw_signals.append("auto_rifle")
                             elif any(x in k_edid for x in ("pistol", "revolver", "1911", "luger", "handgun")):
-                                weap_class = "pistol"
+                                kw_signals.append("pistol")
                             elif "melee" in k_edid:
-                                weap_class = "melee"
+                                kw_signals.append("melee")
                 elif stype == b"LVLO" and len(chunk) >= 8:
                     lvl, ref_fid = struct.unpack("<HxxI", chunk[0:8])
                     if lvl > 0:
@@ -264,6 +288,10 @@ def parse_plugin(filepath: str) -> dict:
                     "templates": obte,
                     "is_unique": has_eitm or ("unique" in f"{edid} {full}".lower()),
                     "stat": stat_val,
+                    "weight": weap_weight,
+                    "mag_cap": mag_cap,
+                    "has_stock_slot": has_stock_slot,
+                    "kw_signals": kw_signals,
                     "weap_class": weap_class,
                 }
             elif tag == "ARMO" and not is_non_playable and full:
@@ -341,6 +369,25 @@ def parse_plugin(filepath: str) -> dict:
                 "is_unique": False,
                 "stat": 20,
             })
+
+    omod_blob = " ".join(f"{o.get('edid', '')} {o.get('name', '')}" for o in omod_recs).lower()
+    omod_auto = any(k in omod_blob for k in ("receiver_auto", "auto_receiver", "fullauto", "full_auto", "rapid"))
+    omod_sniper = any(k in omod_blob for k in ("sniper", "longrange", "recon_scope"))
+    omod_stock = any(k in omod_blob for k in ("stock", "handguard", "foregrip", "barrel_long"))
+    for w in raw_weap.values():
+        sc = {"melee": 0, "pistol": 0, "rifle": 0, "auto_rifle": 0, "sniper": 0, "heavy": 0}
+        for s in w.get("kw_signals", []): sc[s] = sc.get(s, 0) + 3
+        if w.get("has_stock_slot") or omod_stock: sc["rifle"] += 2
+        if omod_auto: sc["auto_rifle"] += 2
+        if omod_sniper: sc["sniper"] += 2
+        if w.get("mag_cap", 0) >= 50: sc["heavy"] += 2; sc["auto_rifle"] += 1
+        elif w.get("mag_cap", 0) >= 25: sc["auto_rifle"] += 1
+        wt = w.get("weight", 0.0)
+        if wt >= 18.0: sc["heavy"] += 2
+        elif wt >= 6.0: sc["rifle"] += 1
+        elif 0.0 < wt < 4.5: sc["pistol"] += 1
+        best, val = max(sc.items(), key=lambda kv: kv)
+        w["weap_class"] = best if val > 0 else ""
 
     families = {}
     for w in raw_weap.values():
